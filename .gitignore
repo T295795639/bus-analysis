@@ -7,6 +7,9 @@ backend/target/
 backend/.idea/
 backend/*.iml
 
+# Claude Code internal
+.claude/
+
 # OS
 .DS_Store
 Thumbs.db
