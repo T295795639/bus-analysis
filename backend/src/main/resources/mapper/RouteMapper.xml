@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nettiexj.bus.mapper.RouteMapper">
+
+    <!-- 某线路的有序站点 + 各站点停靠次数（建议对 station_parking.station_id 建索引） -->
+    <select id="selectStationsWithParking" resultType="com.nettiexj.bus.dto.RouteStationDetailVO">
+        SELECT
+            s.station_id   AS stationId,
+            s.station_name AS stationName,
+            s.lng,
+            s.lat,
+            COUNT(sp.id)   AS parkingCount
+        FROM route_station rs
+        INNER JOIN station s ON rs.station_id = s.station_id
+        LEFT JOIN station_parking sp ON s.station_id = sp.station_id
+        WHERE rs.route_id = #{routeId}
+        GROUP BY s.station_id, s.station_name, s.lng, s.lat, rs.id
+        ORDER BY rs.id
+    </select>
+
+</mapper>

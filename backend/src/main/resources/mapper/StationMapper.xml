@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nettiexj.bus.mapper.StationMapper">
+
+    <!-- 所有站点 + 线路数量 -->
+    <select id="selectAllWithRouteCount" resultType="com.nettiexj.bus.dto.StationVO">
+        SELECT
+            s.station_id AS stationId,
+            s.station_name AS stationName,
+            s.lng,
+            s.lat,
+            COUNT(rs.route_id) AS routeCount
+        FROM station s
+        LEFT JOIN route_station rs ON s.station_id = rs.station_id
+        GROUP BY s.station_id, s.station_name, s.lng, s.lat
+    </select>
+
+    <!-- 某站点的所有途经线路 -->
+    <select id="selectRoutesByStationId" resultType="com.nettiexj.bus.dto.RouteVO">
+        SELECT
+            r.route_id AS routeId,
+            r.route_name AS routeName,
+            r.is_up_or_down AS isUpOrDown
+        FROM route r
+        INNER JOIN route_station rs ON r.route_id = rs.route_id
+        WHERE rs.station_id = #{stationId}
+        ORDER BY r.route_name, r.is_up_or_down
+    </select>
+
+    <!-- 某线路经过的所有站点（按 route_station.id 顺序） -->
+    <select id="selectStationsByRouteId" resultType="com.nettiexj.bus.entity.Station">
+        SELECT
+            s.station_id AS stationId,
+            s.station_name AS stationName,
+            s.lng,
+            s.lat
+        FROM station s
+        INNER JOIN route_station rs ON s.station_id = rs.station_id
+        WHERE rs.route_id = #{routeId}
+        ORDER BY rs.id
+    </select>
+
+    <!-- 站点停靠次数 Top N -->
+    <select id="selectTopByParkingCount" resultType="com.nettiexj.bus.dto.StationRankVO">
+        SELECT
+            s.station_id AS stationId,
+            s.station_name AS stationName,
+            s.lng,
+            s.lat,
+            cnt.parking_count AS parkingCount
+        FROM (
+            SELECT station_id, COUNT(*) AS parking_count
+            FROM station_parking
+            GROUP BY station_id
+            ORDER BY parking_count DESC
+            LIMIT #{topN}
+        ) cnt
+        INNER JOIN station s ON s.station_id = cnt.station_id
+        ORDER BY cnt.parking_count DESC
+    </select>
+
+
+    <!-- 站点平均停靠时长 Top N（建议对 station_parking.station_id 建索引） -->
+    <select id="selectTopByParkingAvgDuration" resultType="com.nettiexj.bus.dto.StationParkingAvgVO">
+        SELECT
+            s.station_id   AS stationId,
+            s.station_name AS stationName,
+            s.lng,
+            s.lat,
+            AVG(TIMESTAMPDIFF(SECOND, sp.start_date_time, sp.end_date_time)) AS avgDurationSeconds,
+            COUNT(*)       AS parkingCount
+        FROM station_parking sp
+        INNER JOIN station s ON sp.station_id = s.station_id
+        GROUP BY s.station_id, s.station_name, s.lng, s.lat
+        ORDER BY avgDurationSeconds DESC
+        LIMIT #{topN}
+    </select>
+
+</mapper>

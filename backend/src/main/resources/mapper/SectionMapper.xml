@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nettiexj.bus.mapper.SectionMapper">
+
+    <!-- 路段平均行驶时长统计，支持时间段筛选（建议对 section_driving.section_id 和 start_date_time 建索引） -->
+    <select id="selectDrivingStats" resultType="com.nettiexj.bus.dto.SectionDrivingVO">
+        SELECT
+            s.section_id       AS sectionId,
+            s.section_name     AS sectionName,
+            s.direction        AS direction,
+            AVG(TIMESTAMPDIFF(SECOND, sd.start_date_time, sd.end_date_time)) AS avgDurationSeconds,
+            COUNT(*)           AS recordCount
+        FROM section_driving sd
+        INNER JOIN section s ON sd.section_id = s.section_id
+        <where>
+            <if test="timeRange == 'morning_peak'">
+                AND HOUR(sd.start_date_time) &gt;= 7 AND HOUR(sd.start_date_time) &lt; 9
+            </if>
+            <if test="timeRange == 'evening_peak'">
+                AND HOUR(sd.start_date_time) &gt;= 17 AND HOUR(sd.start_date_time) &lt; 19
+            </if>
+        </where>
+        GROUP BY s.section_id, s.section_name, s.direction
+        ORDER BY avgDurationSeconds DESC
+        LIMIT #{topN}
+    </select>
+
+
+    <!-- 按线路获取有序路段 path，与 route_station 顺序对齐 -->
+    <select id="selectPathsByRouteId" resultType="com.nettiexj.bus.dto.SectionPathVO">
+        SELECT
+            s.section_id AS sectionId,
+            s.path       AS path
+        FROM section s
+        INNER JOIN route_station rs ON s.start_station_id = rs.station_id
+        WHERE rs.route_id = #{routeId}
+        ORDER BY rs.id
+    </select>
+
+</mapper>
