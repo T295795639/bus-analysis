@@ -27,15 +27,25 @@
     </select>
 
 
-    <!-- 按线路获取有序路段 path，与 route_station 顺序对齐 -->
+    <!-- 按线路获取有序路段 path
+         规则：section_id 前缀 = route_name 中"路"之前的部分，方向 上行→up / 下行→down -->
     <select id="selectPathsByRouteId" resultType="com.nettiexj.bus.dto.SectionPathVO">
         SELECT
             s.section_id AS sectionId,
             s.path       AS path
         FROM section s
-        INNER JOIN route_station rs ON s.start_station_id = rs.station_id
-        WHERE rs.route_id = #{routeId}
-        ORDER BY rs.id
+        JOIN route r ON r.route_id = #{routeId}
+        WHERE s.section_id LIKE CONCAT(
+            SUBSTRING_INDEX(r.route_name, '路', 1),
+            '_',
+            CASE r.is_up_or_down
+                WHEN '上行' THEN 'up'
+                WHEN '下行' THEN 'down'
+                ELSE r.is_up_or_down
+            END,
+            '_%'
+        )
+        ORDER BY s.section_id
     </select>
 
 </mapper>

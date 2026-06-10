@@ -18,7 +18,7 @@
 
     <!-- 某站点的所有途经线路 -->
     <select id="selectRoutesByStationId" resultType="com.nettiexj.bus.dto.RouteVO">
-        SELECT
+        SELECT DISTINCT
             r.route_id AS routeId,
             r.route_name AS routeName,
             r.is_up_or_down AS isUpOrDown

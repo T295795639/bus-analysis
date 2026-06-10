@@ -4,7 +4,6 @@
       <h1>南昌公交可视化</h1>
       <div class="links">
         <router-link to="/map">站点地图</router-link>
-        <router-link to="/ranking">热度排行</router-link>
         <router-link to="/section">路段分析</router-link>
         <router-link to="/parking">停靠分析</router-link>
         <router-link to="/route">线路详情</router-link>
