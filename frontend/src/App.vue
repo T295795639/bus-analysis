@@ -1,7 +1,7 @@
 <template>
   <div class="app">
     <nav class="nav">
-      <h1>南昌公交可视化</h1>
+      <h1>南昌市公交可视分析系统</h1>
       <div class="links">
         <router-link to="/map">站点地图</router-link>
         <router-link to="/section">路段分析</router-link>

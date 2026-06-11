@@ -7,8 +7,9 @@
       <div class="mode-btns">
         <button :class="{ active: displayMode === 'heat' }" @click="setMode('heat')">热力图</button>
         <button :class="{ active: displayMode === 'dot' }" @click="setMode('dot')">站点图</button>
+        <button :class="{ active: displayMode === 'cluster' }" @click="setClusterMode">聚类视图</button>
       </div>
-      <div class="legend">
+      <div v-if="displayMode !== 'cluster'" class="legend">
         <div class="legend-title">途经线路数</div>
         <div class="legend-items">
           <span class="dot" style="background:#3b82f6"></span><span>1-2条</span>
@@ -17,8 +18,15 @@
           <span class="dot" style="background:#dc2626"></span><span>10条+</span>
         </div>
       </div>
+      <div v-else class="legend">
+        <div class="legend-title">站点聚类（共110簇）</div>
+        <div class="legend-items">
+          <span v-for="(c, i) in CLUSTER_PALETTE" :key="i" class="dot" :style="{ background: c }"></span>
+        </div>
+      </div>
       <button :class="['analysis-btn', { active: showRanking }]" @click="toggleRanking">热度分析</button>
       <button :class="['analysis-btn', { active: showParking }]" @click="toggleParking">停靠时间</button>
+      <button :class="['analysis-btn', { active: showGraph }]" @click="toggleGraph">网络图</button>
     </div>
 
     <!-- 停靠排行卡片 -->
@@ -60,6 +68,18 @@
         <button class="close" @click="showParking = false">×</button>
       </div>
       <div ref="parkChartRef" class="rank-chart"></div>
+    </div>
+
+    <!-- 聚类网络图卡片 -->
+    <div v-if="showGraph" class="ranking-card graph-card">
+      <div class="panel-header">
+        <div>
+          <div class="station-name">簇间邻接网络</div>
+          <div class="meta">节点大小 = 站点数，位置保留地理相对关系</div>
+        </div>
+        <button class="close" @click="showGraph = false">×</button>
+      </div>
+      <div ref="graphChartRef" class="rank-chart"></div>
     </div>
 
     <!-- 右侧线路信息面板 -->
@@ -220,8 +240,119 @@ async function loadParking() {
   }, true)
 }
 
-const ZOOM_TO_DOT  = 11   // 放大到此级别切换到站点图
-const ZOOM_TO_HEAT = 11   // 缩小到此级别切回热力图
+// 聚类网络图卡片
+const showGraph = ref(false)
+const graphChartRef = ref(null)
+let graphChart = null
+
+async function toggleGraph() {
+  showGraph.value = !showGraph.value
+  if (showGraph.value) {
+    // 点网络图 → 自动切为聚类视图
+    if (displayMode.value !== 'cluster') setMode('cluster')
+    await nextTick()
+    await loadGraph()
+  } else {
+    graphChart && graphChart.dispose()
+    graphChart = null
+    resetClusterHighlight()
+  }
+}
+
+async function setClusterMode() {
+  setMode('cluster')
+  // 切聚类视图 → 自动打开网络图
+  if (!showGraph.value) {
+    showGraph.value = true
+    await nextTick()
+    await loadGraph()
+  }
+}
+
+let graphNodes = []
+
+async function loadGraph() {
+  const res = await fetch('/cluster_graph.json')
+  const { nodes, edges } = await res.json()
+  graphNodes = nodes
+  await nextTick()
+  if (!graphChartRef.value) return
+  if (!graphChart) graphChart = echarts.init(graphChartRef.value)
+
+  graphChart.setOption({
+    tooltip: {
+      formatter: p => p.dataType === 'node'
+        ? `簇 ${p.data.id}<br/>站点数：${p.data.value}`
+        : ''
+    },
+    series: [{
+      type: 'graph',
+      layout: 'force',
+      force: {
+        repulsion: 120,
+        gravity: 0.05,
+        edgeLength: [30, 80],
+        layoutAnimation: false,
+        friction: 0.9,
+      },
+      data: nodes.map(n => ({
+        id: n.id,
+        x: n.x * 4,
+        y: n.y * 4,
+        value: n.size,
+        symbolSize: Math.max(7, Math.sqrt(n.size) * 1.8),
+        itemStyle: { color: n.color, borderColor: 'rgba(255,255,255,0.7)', borderWidth: 1.5 },
+        label: { show: false }
+      })),
+      edges: edges.map(e => ({
+        source: e.source,
+        target: e.target,
+        lineStyle: { color: '#d1d5db', width: 0.6, opacity: 0.4 }
+      })),
+      roam: true,
+      emphasis: {
+        focus: 'adjacency',
+        lineStyle: { width: 2, opacity: 0.9 }
+      }
+    }]
+  }, true)
+
+  // 点击节点 → 高亮地图上对应簇
+  graphChart.on('click', params => {
+    if (params.dataType !== 'node') return
+    highlightCluster(Number(params.data.id))
+  })
+}
+
+function highlightCluster(clusterId) {
+  clusterMarkers.forEach(m => {
+    const s = m.getExtData()
+    if (s.clusterId === clusterId) {
+      m.setOptions({ radius: 7, fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 2, zIndex: 100 })
+    } else {
+      m.setOptions({ radius: 3, fillOpacity: 0.15, strokeWeight: 0, zIndex: 50 })
+    }
+  })
+}
+
+function resetClusterHighlight() {
+  clusterMarkers.forEach(m => {
+    m.setOptions({ radius: 4, fillOpacity: 0.85, strokeColor: 'rgba(255,255,255,0.5)', strokeWeight: 0.5, zIndex: 50 })
+  })
+}
+
+const ZOOM_TO_DOT  = 11
+const ZOOM_TO_HEAT = 11
+
+// 图着色结果：相邻簇颜色不同，16色覆盖110簇
+const CLUSTER_COLOR_MAP = {"0":"#e6194b","1":"#3cb44b","2":"#e6194b","3":"#3cb44b","4":"#e6194b","5":"#3cb44b","6":"#e6194b","7":"#4363d8","8":"#e6194b","9":"#3cb44b","10":"#4363d8","11":"#e6194b","12":"#e6194b","13":"#3cb44b","14":"#3cb44b","15":"#f58231","16":"#911eb4","17":"#3cb44b","18":"#911eb4","19":"#42d4f4","20":"#f032e6","21":"#f58231","22":"#f58231","23":"#e6194b","24":"#911eb4","25":"#42d4f4","26":"#bfef45","27":"#469990","28":"#4363d8","29":"#469990","30":"#e6194b","31":"#800000","32":"#f032e6","33":"#f58231","34":"#800000","35":"#42d4f4","36":"#aaffc3","37":"#4363d8","38":"#aaffc3","39":"#9a6324","40":"#f58231","41":"#911eb4","42":"#000075","43":"#f58231","44":"#4363d8","45":"#a9a9a9","46":"#bfef45","47":"#ffe119","48":"#f032e6","49":"#0082c8","50":"#000075","51":"#800000","52":"#42d4f4","53":"#9a6324","54":"#f032e6","55":"#911eb4","56":"#f58231","57":"#bfef45","58":"#f032e6","59":"#800000","60":"#911eb4","61":"#e6194b","62":"#aaffc3","63":"#4363d8","64":"#a9a9a9","65":"#3cb44b","66":"#4363d8","67":"#42d4f4","68":"#911eb4","69":"#3cb44b","70":"#42d4f4","71":"#bfef45","72":"#469990","73":"#ffe119","74":"#bfef45","75":"#4363d8","76":"#000075","77":"#4363d8","78":"#469990","79":"#0082c8","80":"#e6194b","81":"#9a6324","82":"#aaffc3","83":"#f58231","84":"#911eb4","85":"#3cb44b","86":"#f032e6","87":"#f032e6","88":"#42d4f4","89":"#9a6324","90":"#aaffc3","91":"#9a6324","92":"#469990","93":"#9a6324","94":"#bfef45","95":"#469990","96":"#e6194b","97":"#000075","98":"#4363d8","99":"#42d4f4","100":"#ffe119","101":"#000075","102":"#f032e6","103":"#bfef45","104":"#aaffc3","105":"#a9a9a9","106":"#aaffc3","107":"#9a6324","108":"#000075","109":"#ffe119"}
+const CLUSTER_PALETTE = [...new Set(Object.values(CLUSTER_COLOR_MAP))]
+let clusterMarkers = []
+
+function colorByCluster(clusterId) {
+  if (clusterId == null) return '#94a3b8'
+  return CLUSTER_COLOR_MAP[String(clusterId)] ?? '#94a3b8'
+}
 
 function radiusByRouteCount(count) {
   if (count >= 10) return 5
@@ -253,6 +384,7 @@ async function initMap() {
 
   // 缩放时自动切换显示模式
   map.on('zoomend', () => {
+    if (displayMode.value === 'cluster') return
     const zoom = map.getZoom()
     if (zoom >= ZOOM_TO_DOT && displayMode.value === 'heat') {
       setMode('dot')
@@ -326,12 +458,40 @@ async function loadStations() {
 
 function setMode(mode) {
   displayMode.value = mode
+
+  // 先全部清除
+  heatmap && heatmap.hide()
+  if (stationMarkers.length) map.remove(stationMarkers)
+  if (clusterMarkers.length) {
+    resetClusterHighlight()
+    map.remove(clusterMarkers)
+    clusterMarkers = []
+  }
+
   if (mode === 'heat') {
     heatmap && heatmap.show()
-    if (stationMarkers.length) map.remove(stationMarkers)
-  } else {
-    heatmap && heatmap.hide()
+  } else if (mode === 'dot') {
     map.add(stationMarkers)
+  } else if (mode === 'cluster') {
+    // 按 cluster_id 着色，懒创建
+    if (clusterMarkers.length === 0) {
+      allStationsData.forEach(s => {
+        const m = new AMap.CircleMarker({
+          center: [s.lng, s.lat],
+          radius: 4,
+          fillColor: colorByCluster(s.clusterId),
+          fillOpacity: 0.85,
+          strokeColor: 'rgba(255,255,255,0.5)',
+          strokeWeight: 0.5,
+          cursor: 'pointer',
+          zIndex: 50,
+          extData: s
+        })
+        m.on('click', () => onStationClick(s))
+        clusterMarkers.push(m)
+      })
+    }
+    map.add(clusterMarkers)
   }
 }
 
@@ -370,7 +530,7 @@ async function buildPolyline(route, color, showStations = false) {
     stationApi.listByRoute(route.routeId),
     sectionApi.pathsByRoute(route.routeId)
   ])
-  const stations = stationRes.data.filter(s => s.lng && s.lat)
+  const stations = stationRes.data.filter(s => s.lng && s.lat && s.stationId > 10000)
   const sections = sectionRes.data
 
   let fullPath = []
@@ -378,8 +538,15 @@ async function buildPolyline(route, color, showStations = false) {
     sections.forEach(sec => {
       try {
         const pts = JSON.parse(sec.path)
-        if (pts && pts.length > 0) {
-          fullPath = fullPath.length > 0 ? fullPath.concat(pts.slice(1)) : fullPath.concat(pts)
+        if (!pts || pts.length === 0) return
+        if (fullPath.length === 0) {
+          fullPath = fullPath.concat(pts)
+        } else {
+          const [lx, ly] = fullPath[fullPath.length - 1]
+          const [fx, fy] = pts[0]
+          const dist = Math.sqrt((lx - fx) ** 2 + (ly - fy) ** 2)
+          // 距离小于 0.005°(约500m) 才去掉重复点，否则直接追加避免长连线
+          fullPath = dist < 0.005 ? fullPath.concat(pts.slice(1)) : fullPath.concat(pts)
         }
       } catch (e) {}
     })
@@ -498,6 +665,7 @@ onUnmounted(() => map && map.destroy())
   border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px;
 }
 .parking-card { margin-top: 230px; }
+.graph-card { margin-top: 360px; width: 420px; }
 .anomaly-tip { margin-left: 10px; display: inline-flex; align-items: center; gap: 3px; }
 .dot-red { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #dc2626; }
 

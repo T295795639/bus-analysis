@@ -35,15 +35,14 @@
             s.path       AS path
         FROM section s
         JOIN route r ON r.route_id = #{routeId}
-        WHERE s.section_id LIKE CONCAT(
+        WHERE s.route_number = CONCAT(
             SUBSTRING_INDEX(r.route_name, '路', 1),
             '_',
             CASE r.is_up_or_down
                 WHEN '上行' THEN 'up'
                 WHEN '下行' THEN 'down'
                 ELSE r.is_up_or_down
-            END,
-            '_%'
+            END
         )
         ORDER BY s.section_id
     </select>

@@ -10,10 +10,11 @@
             s.station_name AS stationName,
             s.lng,
             s.lat,
-            COUNT(rs.route_id) AS routeCount
+            COUNT(rs.route_id) AS routeCount,
+            s.cluster_id AS clusterId
         FROM station s
         LEFT JOIN route_station rs ON s.station_id = rs.station_id
-        GROUP BY s.station_id, s.station_name, s.lng, s.lat
+        GROUP BY s.station_id, s.station_name, s.lng, s.lat, s.cluster_id
     </select>
 
     <!-- 某站点的所有途经线路 -->
@@ -38,6 +39,7 @@
         FROM station s
         INNER JOIN route_station rs ON s.station_id = rs.station_id
         WHERE rs.route_id = #{routeId}
+          AND s.station_id > 10000
         ORDER BY rs.id
     </select>
 

@@ -9,4 +9,5 @@ public class StationVO {
     private Double lng;
     private Double lat;
     private Integer routeCount;
+    private Integer clusterId;
 }
