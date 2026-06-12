@@ -19,4 +19,18 @@
         ORDER BY rs.id
     </select>
 
+    <!-- 某聚类簇内经过的所有线路（去重） -->
+    <select id="selectRoutesByClusterId" resultType="com.nettiexj.bus.dto.RouteVO">
+        SELECT DISTINCT
+            r.route_id      AS routeId,
+            r.route_name    AS routeName,
+            r.is_up_or_down AS isUpOrDown
+        FROM station s
+        INNER JOIN route_station rs ON s.station_id = rs.station_id
+        INNER JOIN route r ON rs.route_id = r.route_id
+        WHERE s.cluster_id = #{clusterId}
+          AND s.station_id > 10000
+        ORDER BY r.route_name, r.is_up_or_down
+    </select>
+
 </mapper>

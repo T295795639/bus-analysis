@@ -27,4 +27,16 @@ public class RouteController {
     public Result<List<RouteStationDetailVO>> detail(@PathVariable Integer routeId) {
         return Result.success(routeService.getRouteDetail(routeId));
     }
+
+    /** 某聚类簇内经过的所有线路 */
+    @GetMapping("/by-cluster/{clusterId}")
+    public Result<List<com.nettiexj.bus.dto.RouteVO>> byCluster(@PathVariable Integer clusterId) {
+        return Result.success(routeService.getRoutesByCluster(clusterId));
+    }
+
+    /** 线路瓶颈分析：沿线站点停靠时长 + 路段行驶时长 + 异常评分 */
+    @GetMapping("/{routeId}/analysis")
+    public Result<com.nettiexj.bus.dto.RouteAnalysisVO> analysis(@PathVariable Integer routeId) {
+        return Result.success(routeService.getRouteAnalysis(routeId));
+    }
 }

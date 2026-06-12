@@ -38,4 +38,24 @@ public class StationService {
         if (topN == null || topN <= 0) topN = 20;
         return stationMapper.selectTopByParkingAvgDuration(topN);
     }
+
+    public List<StationParkingAvgVO> parkingScatter() {
+        return stationMapper.selectParkingScatter();
+    }
+
+    public List<com.nettiexj.bus.dto.PeakStationVO> peakComparison(Integer topN) {
+        return stationMapper.selectPeakComparison(topN == null || topN <= 0 ? 20 : topN);
+    }
+
+    public List<com.nettiexj.bus.dto.HourlyCountVO> hourlyCount(Integer stationId) {
+        return stationMapper.selectHourlyCount(stationId);
+    }
+
+    public List<com.nettiexj.bus.dto.TransferHubVO> transferHubs(Integer topN) {
+        return stationMapper.selectTransferHubs(topN == null || topN <= 0 ? 20 : topN);
+    }
+
+    public List<com.nettiexj.bus.dto.ClusterParkingVO> clusterParkingStats() {
+        return stationMapper.selectClusterParkingStats();
+    }
 }

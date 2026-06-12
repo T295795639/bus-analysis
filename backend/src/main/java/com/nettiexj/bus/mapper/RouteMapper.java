@@ -10,4 +10,6 @@ import java.util.List;
 public interface RouteMapper extends BaseMapper<Route> {
 
     List<RouteStationDetailVO> selectStationsWithParking(@Param("routeId") Integer routeId);
+
+    List<com.nettiexj.bus.dto.RouteVO> selectRoutesByClusterId(@Param("clusterId") Integer clusterId);
 }

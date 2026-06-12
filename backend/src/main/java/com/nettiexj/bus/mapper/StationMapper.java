@@ -36,4 +36,16 @@ public interface StationMapper extends BaseMapper<Station> {
      * 站点平均停靠时长 Top N（识别异常站点）
      */
     List<StationParkingAvgVO> selectTopByParkingAvgDuration(@Param("topN") Integer topN);
+
+    List<StationParkingAvgVO> selectParkingScatter();
+
+    List<com.nettiexj.bus.dto.PeakStationVO> selectPeakComparison(@Param("topN") Integer topN);
+
+    List<com.nettiexj.bus.dto.HourlyCountVO> selectHourlyCount(@Param("stationId") Integer stationId);
+
+    List<com.nettiexj.bus.dto.TransferHubVO> selectTransferHubs(@Param("topN") Integer topN);
+
+    List<com.nettiexj.bus.dto.ClusterParkingVO> selectClusterParkingStats();
+
+    List<com.nettiexj.bus.dto.StationAnalysisVO> selectStationAnalysisByRouteId(@Param("routeId") Integer routeId);
 }

@@ -9,7 +9,7 @@
             s.section_id       AS sectionId,
             s.section_name     AS sectionName,
             s.direction        AS direction,
-            AVG(TIMESTAMPDIFF(SECOND, sd.start_date_time, sd.end_date_time)) AS avgDurationSeconds,
+            AVG(sd.duration_seconds) AS avgDurationSeconds,
             COUNT(*)           AS recordCount
         FROM section_driving sd
         INNER JOIN section s ON sd.section_id = s.section_id
@@ -43,6 +43,23 @@
                 WHEN '下行' THEN 'down'
                 ELSE r.is_up_or_down
             END
+        )
+        ORDER BY s.section_id
+    </select>
+
+    <!-- 路线分析：某线路所有路段 + 平均行驶时长 -->
+    <select id="selectSectionAnalysisByRouteId" resultType="com.nettiexj.bus.dto.SectionAnalysisRawVO">
+        SELECT
+            s.section_id   AS sectionId,
+            s.section_name AS sectionName,
+            s.path         AS path,
+            COALESCE(sds.avg_duration_seconds, 0) AS avgDuration
+        FROM section s
+        JOIN route r ON r.route_id = #{routeId}
+        LEFT JOIN section_driving_summary sds ON sds.section_id = s.section_id
+        WHERE s.route_number = CONCAT(
+            SUBSTRING_INDEX(r.route_name, '路', 1), '_',
+            CASE r.is_up_or_down WHEN '上行' THEN 'up' WHEN '下行' THEN 'down' ELSE r.is_up_or_down END
         )
         ORDER BY s.section_id
     </select>

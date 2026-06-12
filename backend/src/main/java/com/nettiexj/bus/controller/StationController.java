@@ -48,4 +48,36 @@ public class StationController {
     public Result<List<StationParkingAvgVO>> parkingStats(@RequestParam(defaultValue = "20") Integer topN) {
         return Result.success(stationService.topStationsByParkingAvgDuration(topN));
     }
+
+    /** 全量站点停靠散点图数据（停靠次数 × 平均时长） */
+    @GetMapping("/parking/scatter")
+    public Result<List<StationParkingAvgVO>> parkingScatter() {
+        return Result.success(stationService.parkingScatter());
+    }
+
+    /** 高峰 vs 平峰停靠量对比 Top N */
+    @GetMapping("/peak/comparison")
+    public Result<List<com.nettiexj.bus.dto.PeakStationVO>> peakComparison(
+            @RequestParam(defaultValue = "20") Integer topN) {
+        return Result.success(stationService.peakComparison(topN));
+    }
+
+    /** 某站点全天停靠量按小时分布 */
+    @GetMapping("/{stationId}/hourly")
+    public Result<List<com.nettiexj.bus.dto.HourlyCountVO>> hourly(@PathVariable Integer stationId) {
+        return Result.success(stationService.hourlyCount(stationId));
+    }
+
+    /** 换乘枢纽识别 Top N */
+    @GetMapping("/transfer-hub")
+    public Result<List<com.nettiexj.bus.dto.TransferHubVO>> transferHub(
+            @RequestParam(defaultValue = "20") Integer topN) {
+        return Result.success(stationService.transferHubs(topN));
+    }
+
+    /** 各聚类区域停靠时长统计 */
+    @GetMapping("/cluster/parking-stats")
+    public Result<List<com.nettiexj.bus.dto.ClusterParkingVO>> clusterParkingStats() {
+        return Result.success(stationService.clusterParkingStats());
+    }
 }

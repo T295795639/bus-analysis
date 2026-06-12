@@ -63,20 +63,118 @@
     </select>
 
 
+    <!-- 全量站点停靠次数 + 平均时长（用于散点图） -->
+    <select id="selectParkingScatter" resultType="com.nettiexj.bus.dto.StationParkingAvgVO">
+        SELECT
+            s.station_id                AS stationId,
+            s.station_name              AS stationName,
+            s.lng,
+            s.lat,
+            ps.avg_duration_seconds     AS avgDurationSeconds,
+            ps.parking_count            AS parkingCount
+        FROM station_parking_summary ps
+        INNER JOIN station s ON s.station_id = ps.station_id
+        WHERE s.station_id > 10000
+          AND ps.avg_duration_seconds > 0
+    </select>
+
+    <!-- 高峰 vs 平峰停靠量 Top N（按高峰比例排序） -->
+    <select id="selectPeakComparison" resultType="com.nettiexj.bus.dto.PeakStationVO">
+        SELECT
+            s.station_id AS stationId,
+            s.station_name AS stationName,
+            SUM(CASE WHEN HOUR(sp.start_date_time) BETWEEN 7 AND 8  THEN 1 ELSE 0 END) AS morningCount,
+            SUM(CASE WHEN HOUR(sp.start_date_time) BETWEEN 17 AND 18 THEN 1 ELSE 0 END) AS eveningCount,
+            SUM(CASE WHEN HOUR(sp.start_date_time) NOT BETWEEN 7 AND 8
+                      AND HOUR(sp.start_date_time) NOT BETWEEN 17 AND 18 THEN 1 ELSE 0 END) AS offPeakCount,
+            ROUND(
+                (SUM(CASE WHEN HOUR(sp.start_date_time) BETWEEN 7 AND 8 THEN 1 ELSE 0 END) +
+                 SUM(CASE WHEN HOUR(sp.start_date_time) BETWEEN 17 AND 18 THEN 1 ELSE 0 END)) * 1.0
+                / NULLIF(SUM(CASE WHEN HOUR(sp.start_date_time) NOT BETWEEN 7 AND 8
+                                   AND HOUR(sp.start_date_time) NOT BETWEEN 17 AND 18 THEN 1 ELSE 0 END), 0),
+            3) AS peakRatio
+        FROM station_parking sp
+        INNER JOIN station s ON sp.station_id = s.station_id
+        WHERE s.station_id > 10000
+        GROUP BY s.station_id, s.station_name
+        HAVING morningCount + eveningCount > 0
+        ORDER BY peakRatio DESC
+        LIMIT #{topN}
+    </select>
+
+    <!-- 某站点全天停靠量按小时分布 -->
+    <select id="selectHourlyCount" resultType="com.nettiexj.bus.dto.HourlyCountVO">
+        SELECT
+            HOUR(start_date_time) AS hour,
+            COUNT(*) AS count
+        FROM station_parking
+        WHERE station_id = #{stationId}
+        GROUP BY HOUR(start_date_time)
+        ORDER BY hour
+    </select>
+
+    <!-- 换乘枢纽：途经线路多 + 停靠次数高 Top N -->
+    <select id="selectTransferHubs" resultType="com.nettiexj.bus.dto.TransferHubVO">
+        SELECT
+            s.station_id AS stationId,
+            s.station_name AS stationName,
+            s.lng, s.lat,
+            COUNT(DISTINCT rs.route_id) AS routeCount,
+            COUNT(sp.id) AS parkingCount
+        FROM station s
+        INNER JOIN route_station rs ON s.station_id = rs.station_id
+        LEFT JOIN station_parking sp ON s.station_id = sp.station_id
+        WHERE s.station_id > 10000
+        GROUP BY s.station_id, s.station_name, s.lng, s.lat
+        ORDER BY routeCount DESC, parkingCount DESC
+        LIMIT #{topN}
+    </select>
+
+    <!-- 各聚类区域停靠时长统计 -->
+    <select id="selectClusterParkingStats" resultType="com.nettiexj.bus.dto.ClusterParkingVO">
+        SELECT
+            s.cluster_id                        AS clusterId,
+            COUNT(DISTINCT agg.station_id)      AS stationCount,
+            AVG(agg.avg_duration_seconds)       AS avgDurationSeconds,
+            SUM(agg.parking_count)              AS totalParkingCount
+        FROM station_parking_summary agg
+        INNER JOIN station s ON s.station_id = agg.station_id
+        WHERE s.cluster_id IS NOT NULL
+          AND s.station_id > 10000
+        GROUP BY s.cluster_id
+        ORDER BY avgDurationSeconds DESC
+    </select>
+
     <!-- 站点平均停靠时长 Top N（建议对 station_parking.station_id 建索引） -->
     <select id="selectTopByParkingAvgDuration" resultType="com.nettiexj.bus.dto.StationParkingAvgVO">
+        SELECT
+            s.station_id            AS stationId,
+            s.station_name          AS stationName,
+            s.lng,
+            s.lat,
+            ps.avg_duration_seconds AS avgDurationSeconds,
+            ps.parking_count        AS parkingCount
+        FROM station_parking_summary ps
+        INNER JOIN station s ON s.station_id = ps.station_id
+        WHERE s.station_id > 10000
+        ORDER BY avgDurationSeconds DESC
+        LIMIT #{topN}
+    </select>
+
+    <!-- 路线分析：某线路所有站点 + 平均停靠时长（按途经顺序） -->
+    <select id="selectStationAnalysisByRouteId" resultType="com.nettiexj.bus.dto.StationAnalysisVO">
         SELECT
             s.station_id   AS stationId,
             s.station_name AS stationName,
             s.lng,
             s.lat,
-            AVG(TIMESTAMPDIFF(SECOND, sp.start_date_time, sp.end_date_time)) AS avgDurationSeconds,
-            COUNT(*)       AS parkingCount
-        FROM station_parking sp
-        INNER JOIN station s ON sp.station_id = s.station_id
-        GROUP BY s.station_id, s.station_name, s.lng, s.lat
-        ORDER BY avgDurationSeconds DESC
-        LIMIT #{topN}
+            COALESCE(ps.avg_duration_seconds, 0) AS avgDuration
+        FROM route_station rs
+        INNER JOIN station s ON s.station_id = rs.station_id
+        LEFT JOIN station_parking_summary ps ON ps.station_id = s.station_id
+        WHERE rs.route_id = #{routeId}
+          AND s.station_id > 10000
+        ORDER BY rs.id
     </select>
 
 </mapper>
