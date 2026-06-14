@@ -27,8 +27,23 @@
     </select>
 
 
-    <!-- 按线路获取有序路段 path
-         规则：section_id 前缀 = route_name 中"路"之前的部分，方向 上行→up / 下行→down -->
+    <!-- 按站点ID获取所有途经线路的路段（直接通过 start/end_station_id 匹配，不依赖 route_name） -->
+    <select id="selectPathsByStationId" resultType="com.nettiexj.bus.dto.SectionPathVO">
+        SELECT s2.route_number AS routeNumber,
+               s2.section_id  AS sectionId,
+               s2.path        AS path
+        FROM (
+            SELECT DISTINCT route_number
+            FROM section
+            WHERE start_station_id = #{stationId}
+               OR end_station_id   = #{stationId}
+        ) rn
+        JOIN section s2 ON s2.route_number = rn.route_number
+        WHERE s2.path IS NOT NULL AND s2.path != ''
+        ORDER BY s2.route_number, s2.section_id
+    </select>
+
+    <!-- 按线路ID获取有序路段 path（保留，供线路分析页使用） -->
     <select id="selectPathsByRouteId" resultType="com.nettiexj.bus.dto.SectionPathVO">
         SELECT
             s.section_id AS sectionId,
@@ -36,14 +51,13 @@
         FROM section s
         JOIN route r ON r.route_id = #{routeId}
         WHERE s.route_number = CONCAT(
-            SUBSTRING_INDEX(r.route_name, '路', 1),
-            '_',
-            CASE r.is_up_or_down
-                WHEN '上行' THEN 'up'
-                WHEN '下行' THEN 'down'
-                ELSE r.is_up_or_down
-            END
-        )
+                  #{routeId}, '_',
+                  CASE r.is_up_or_down
+                      WHEN '上行' THEN 'up'
+                      WHEN '下行' THEN 'down'
+                      ELSE r.is_up_or_down
+                  END
+              )
         ORDER BY s.section_id
     </select>
 
@@ -51,17 +65,26 @@
     <select id="selectSectionAnalysisByRouteId" resultType="com.nettiexj.bus.dto.SectionAnalysisRawVO">
         SELECT
             s.section_id   AS sectionId,
-            s.section_name AS sectionName,
+            CONCAT(COALESCE(ss.station_name, s.start_station_id), ' → ', COALESCE(es.station_name, s.end_station_id)) AS sectionName,
             s.path         AS path,
             COALESCE(sds.avg_duration_seconds, 0) AS avgDuration
         FROM section s
         JOIN route r ON r.route_id = #{routeId}
+        LEFT JOIN station ss ON ss.station_id = s.start_station_id
+        LEFT JOIN station es ON es.station_id = s.end_station_id
         LEFT JOIN section_driving_summary sds ON sds.section_id = s.section_id
         WHERE s.route_number = CONCAT(
-            SUBSTRING_INDEX(r.route_name, '路', 1), '_',
-            CASE r.is_up_or_down WHEN '上行' THEN 'up' WHEN '下行' THEN 'down' ELSE r.is_up_or_down END
-        )
+                  #{routeId}, '_',
+                  CASE r.is_up_or_down WHEN '上行' THEN 'up' WHEN '下行' THEN 'down' ELSE r.is_up_or_down END
+              )
         ORDER BY s.section_id
+    </select>
+
+    <!-- 测试用：全量路段 path -->
+    <select id="selectAllPaths" resultType="com.nettiexj.bus.dto.SectionPathVO">
+        SELECT section_id AS sectionId, path
+        FROM section
+        WHERE path IS NOT NULL AND path != ''
     </select>
 
 </mapper>

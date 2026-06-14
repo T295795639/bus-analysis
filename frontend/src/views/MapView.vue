@@ -24,70 +24,90 @@
           <span v-for="(c, i) in CLUSTER_PALETTE" :key="i" class="dot" :style="{ background: c }"></span>
         </div>
       </div>
-      <button :class="['analysis-btn', { active: showRanking }]" @click="toggleRanking">热度分析</button>
-      <button :class="['analysis-btn', { active: showParking }]" @click="toggleParking">停靠时间</button>
-      <button :class="['analysis-btn', { active: showScatter }]" @click="toggleScatter">停靠散点</button>
+      <button :class="['analysis-btn', { active: showDwell }]" @click="toggleDwell">站点停留分析</button>
       <button :class="['analysis-btn', { active: showPeak }]" @click="togglePeak">高峰对比</button>
       <button :class="['analysis-btn', { active: showTransfer }]" @click="toggleTransfer">换乘枢纽</button>
       <button :class="['analysis-btn', { active: showClusterStat }]" @click="toggleClusterStat">区域时长</button>
       <button :class="['analysis-btn', { active: showGraph }]" @click="toggleGraph">网络图</button>
+      <button :class="['analysis-btn', 'test-btn', { active: testMode }]" @click="toggleTestMode">路网底图</button>
     </div>
 
-    <!-- 停靠排行卡片 -->
-    <div v-if="showRanking" v-draggable class="ranking-card">
+    <!-- 地图清除按钮 -->
+    <button v-if="selectedStation" class="map-clear-btn" @click="closePanel">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="13" height="13"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      清除
+    </button>
+
+    <!-- 站点停留/枢纽分析卡片 -->
+    <div v-if="showDwell" v-draggable class="ranking-card dwell-card">
       <div class="panel-header">
-        <div>
-          <div class="station-name">站点停靠次数排行</div>
-          <div class="meta">
-            Top
-            <select v-model="rankTopN" @change="loadRanking" class="topn-select">
-              <option :value="10">10</option>
-              <option :value="20">20</option>
-              <option :value="50">50</option>
-            </select>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:8px">
+            <button :class="['dwell-tab-btn', { active: dwellTab === 'dwell' }]" @click="switchDwellTab('dwell')">停留分析</button>
+            <button :class="['dwell-tab-btn', { active: dwellTab === 'hub' }]" @click="switchDwellTab('hub')">枢纽分析</button>
           </div>
-        </div>
-        <button class="close" @click="showRanking = false">×</button>
-      </div>
-      <div ref="rankChartRef" class="rank-chart"></div>
-    </div>
-
-    <!-- 停靠时间分析卡片 -->
-    <div v-if="showParking" v-draggable class="ranking-card parking-card">
-      <div class="panel-header">
-        <div>
-          <div class="station-name">站点平均停靠时长</div>
-          <div class="meta">
-            Top
-            <select v-model="parkTopN" @change="loadParking" class="topn-select">
-              <option :value="10">10</option>
-              <option :value="20">20</option>
-              <option :value="50">50</option>
-            </select>
-            <span class="anomaly-tip">
-              <span class="dot-red"></span>红色为异常站点（超均值1.5倍）
+          <div class="meta" style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:4px">
+            <template v-if="dwellTab === 'dwell'">
+              <span class="scatter-tag high-freq-short">高频短停</span>
+              <span class="scatter-tag low-freq-long">低频长停</span>
+              <span class="scatter-tag anomaly">双高异常</span>
+            </template>
+            <template v-else>
+              <span class="scatter-tag anomaly">多线多客</span>
+              <span class="scatter-tag high-freq-short">高客流少线</span>
+              <span class="scatter-tag low-freq-long">多线少客</span>
+            </template>
+            <span v-if="selectedRankStation" class="rank-selected-pill" style="margin-left:4px">
+              ◎ {{ selectedRankStation }}
+              <span @click.stop="clearRankSelection" style="cursor:pointer;margin-left:4px;opacity:0.7">✕</span>
             </span>
           </div>
         </div>
-        <button class="close" @click="showParking = false">×</button>
+        <button class="close" @click="showDwell = false">×</button>
       </div>
-      <div ref="parkChartRef" class="rank-chart"></div>
-    </div>
 
-    <!-- 停靠散点图卡片 -->
-    <div v-if="showScatter" v-draggable class="ranking-card scatter-card">
-      <div class="panel-header">
-        <div>
-          <div class="station-name">停靠次数 × 停留时长</div>
-          <div class="meta">
-            <span class="scatter-tag high-freq-short">高频短停</span>
-            <span class="scatter-tag low-freq-long">低频长停</span>
-            <span class="scatter-tag anomaly">双高异常</span>
+      <!-- 散点图区域 -->
+      <div class="dwell-scatter-section">
+        <div class="dwell-section-label">
+          <span class="sec-dot" style="background:#8b5cf6"></span>
+          {{ dwellTab === 'dwell' ? '停靠分布总览' : '客流-换乘分布' }}
+          <span style="font-size:10px;color:#9ca3af;margin-left:6px">点击站点联动两侧排行</span>
+        </div>
+        <div ref="scatterChartRef" class="rank-chart dwell-scatter-chart"></div>
+      </div>
+
+      <!-- 双列排行 -->
+      <div class="dwell-ranks">
+        <div class="dwell-rank-col">
+          <div class="dwell-section-label">
+            <span class="sec-dot" style="background:#2563eb"></span>停靠次数排行
+          </div>
+          <div ref="rankScrollRef" class="dwell-rank-scroll">
+            <div ref="rankChartRef" class="rank-chart"></div>
           </div>
         </div>
-        <button class="close" @click="showScatter = false">×</button>
+        <div class="dwell-rank-col">
+          <!-- 停留分析：平均停靠时长 -->
+          <template v-if="dwellTab === 'dwell'">
+            <div class="dwell-section-label">
+              <span class="sec-dot" style="background:#16a34a"></span>平均停靠时长
+              <span class="anomaly-tip" style="margin-left:5px"><span class="dot-red"></span>超均值1.5倍</span>
+            </div>
+            <div ref="parkScrollRef" class="dwell-rank-scroll">
+              <div ref="parkChartRef" class="rank-chart"></div>
+            </div>
+          </template>
+          <!-- 枢纽分析：途经线路数 -->
+          <template v-else>
+            <div class="dwell-section-label">
+              <span class="sec-dot" style="background:#0891b2"></span>途经线路数排行
+            </div>
+            <div ref="hubScrollRef" class="dwell-rank-scroll">
+              <div ref="hubChartRef" class="rank-chart"></div>
+            </div>
+          </template>
+        </div>
       </div>
-      <div ref="scatterChartRef" class="rank-chart scatter-chart"></div>
     </div>
 
     <!-- 高峰对比卡片 -->
@@ -135,7 +155,7 @@
       <div class="panel-header">
         <div>
           <div class="station-name">簇间邻接网络</div>
-          <div class="meta">节点大小 = 站点数，位置保留地理相对关系</div>
+          <div class="meta">节点大小 = 站点数，位置与地图地理方位对应</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           <button class="clear-btn" @click="clearClusterSelection">清除</button>
@@ -145,71 +165,85 @@
       <div ref="graphChartRef" class="rank-chart"></div>
     </div>
 
-    <!-- 右侧线路信息面板 -->
+    <!-- 右侧站点分析面板 -->
     <div v-if="selectedStation" class="panel">
+
+      <!-- ① 站点头部 -->
       <div class="panel-header">
-        <div>
+        <div class="panel-hd-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+            <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/>
+          </svg>
+        </div>
+        <div style="flex:1;min-width:0">
           <div class="station-name">{{ selectedStation.stationName }}</div>
-          <div class="meta">
-            <template v-if="selectedStation._isCluster">
-              站点数：{{ selectedStation._stationCount }} · 共 {{ routes.length }} 条线路途经
-            </template>
-            <template v-else>
-              编号：{{ selectedStation.stationId }} · 共 {{ routes.length }} 条线路途经
-            </template>
+          <div class="meta" style="display:flex;gap:8px;margin-top:3px">
+            <span v-if="!selectedStation._isCluster" class="meta-tag">ID {{ selectedStation.stationId }}</span>
+            <span v-else class="meta-tag">{{ selectedStation._stationCount }} 个站点</span>
+            <span class="meta-tag blue">{{ routes.length }} 条线路</span>
           </div>
         </div>
         <button class="close" @click="closePanel">×</button>
       </div>
-      <div class="route-list-title">途径线路</div>
-      <ul class="route-list">
-        <li
-          v-for="r in routes"
-          :key="r.routeId"
-          :class="{ active: currentRouteId === r.routeId }"
-          @click="drawRoute(r)"
-        >
-          <span class="route-name">{{ r.routeName }}</span>
-          <span class="direction">{{ r.isUpOrDown }}</span>
-        </li>
-      </ul>
-      <!-- 瓶颈分析面板 -->
-      <div v-if="showAnalysis && analysisData" class="analysis-panel">
-        <div class="analysis-panel-header">
-          <span class="hourly-title" style="margin:0">瓶颈分析</span>
-          <div class="analysis-tabs">
-            <button :class="['atab', { active: analysisTab==='station' }]" @click="analysisTab='station'">慢站点</button>
-            <button :class="['atab', { active: analysisTab==='section' }]" @click="analysisTab='section'">拥堵路段</button>
+
+      <div class="panel-body">
+
+        <!-- ② 途经线路 -->
+        <div class="panel-section">
+          <div class="panel-section-title">
+            <span class="sec-dot" style="background:#2563eb"></span>途经线路
           </div>
+          <ul class="route-list">
+            <li v-for="r in routes" :key="r.routeId"
+                :class="{ active: currentRouteId === r.routeId }"
+                @click="drawRoute(r)">
+              <span class="route-name">{{ r.routeName }}</span>
+            </li>
+          </ul>
         </div>
-        <div class="analysis-legend">
-          <span class="legend-dot" style="background:#22c55e"></span>正常
-          <span class="legend-dot" style="background:#f59e0b; margin-left:8px"></span>偏慢
-          <span class="legend-dot" style="background:#ef4444; margin-left:8px"></span>异常
+
+        <!-- ③ 全天停靠量分布 -->
+        <div v-if="!selectedStation._isCluster" class="panel-section">
+          <div class="panel-section-title">
+            <span class="sec-dot" style="background:#16a34a"></span>全天停靠量分布
+          </div>
+          <div ref="hourlyChartRef" class="hourly-chart"></div>
         </div>
-        <!-- 慢站点排行 -->
-        <ul v-if="analysisTab==='station'" class="analysis-list">
-          <li v-for="s in [...analysisData.stations].filter(s=>s.avgDuration>0).sort((a,b)=>b.anomalyScore-a.anomalyScore).slice(0,10)"
-              :key="s.stationId" class="analysis-item">
-            <span class="anomaly-bar" :style="{background: anomalyColor(s.anomalyScore)}"></span>
-            <span class="analysis-name">{{ s.stationName }}</span>
-            <span class="analysis-val">{{ (s.avgDuration/60).toFixed(1) }} 分钟</span>
-          </li>
-        </ul>
-        <!-- 拥堵路段排行 -->
-        <ul v-if="analysisTab==='section'" class="analysis-list">
-          <li v-for="s in [...analysisData.sections].filter(s=>s.avgDuration>0).sort((a,b)=>b.anomalyScore-a.anomalyScore).slice(0,10)"
-              :key="s.sectionId" class="analysis-item">
-            <span class="anomaly-bar" :style="{background: anomalyColor(s.anomalyScore)}"></span>
-            <span class="analysis-name">{{ s.sectionName }}</span>
-            <span class="analysis-val">{{ (s.avgDuration/60).toFixed(1) }} 分钟</span>
-          </li>
-        </ul>
-      </div>
-      <!-- 小时分布图（仅真实站点显示） -->
-      <div v-if="selectedStation && !selectedStation._isCluster" class="hourly-section">
-        <div class="hourly-title">全天停靠量分布</div>
-        <div ref="hourlyChartRef" class="hourly-chart"></div>
+
+        <!-- ④ 瓶颈分析 -->
+        <div v-if="showAnalysis && analysisData" class="panel-section">
+          <div class="panel-section-title" style="justify-content:space-between">
+            <div style="display:flex;align-items:center;gap:6px">
+              <span class="sec-dot" style="background:#f59e0b"></span>瓶颈分析
+            </div>
+            <div class="analysis-tabs">
+              <button :class="['atab', { active: analysisTab==='station' }]"  @click="analysisTab='station'">慢站点</button>
+              <button :class="['atab', { active: analysisTab==='section' }]" @click="analysisTab='section'">拥堵路段</button>
+            </div>
+          </div>
+          <div class="analysis-legend">
+            <span class="legend-dot" style="background:#22c55e"></span>正常
+            <span class="legend-dot" style="background:#f59e0b;margin-left:8px"></span>偏慢
+            <span class="legend-dot" style="background:#ef4444;margin-left:8px"></span>异常
+          </div>
+          <ul v-if="analysisTab==='station'" class="analysis-list">
+            <li v-for="s in [...analysisData.stations].filter(s=>s.avgDuration>0).sort((a,b)=>b.anomalyScore-a.anomalyScore).slice(0,10)"
+                :key="s.stationId" class="analysis-item">
+              <span class="anomaly-bar" :style="{background: anomalyColor(s.anomalyScore)}"></span>
+              <span class="analysis-name">{{ s.stationName }}</span>
+              <span class="analysis-val">{{ (s.avgDuration/60).toFixed(1) }} 分钟</span>
+            </li>
+          </ul>
+          <ul v-if="analysisTab==='section'" class="analysis-list">
+            <li v-for="s in [...analysisData.sections].filter(s=>s.avgDuration>0).sort((a,b)=>b.anomalyScore-a.anomalyScore).slice(0,10)"
+                :key="s.sectionId" class="analysis-item">
+              <span class="anomaly-bar" :style="{background: anomalyColor(s.anomalyScore)}"></span>
+              <span class="analysis-name">{{ s.sectionName }}</span>
+              <span class="analysis-val">{{ (s.avgDuration/60).toFixed(1) }} 分钟</span>
+            </li>
+          </ul>
+        </div>
+
       </div>
     </div>
 
@@ -224,6 +258,27 @@ import * as echarts from 'echarts'
 import { stationApi, sectionApi, routeApi } from '../api'
 
 const AMAP_KEY = '2991ac65a0c2afea3a704f59bac52f28'
+
+// WGS84 → GCJ02（火星坐标）转换，用于高德地图显示
+function wgs84ToGcj02(lng, lat) {
+  const a = 6378245.0, ee = 0.00669342162296594323
+  const x = lng - 105.0, y = lat - 35.0
+  let dlat = -100 + 2*x + 3*y + 0.2*y*y + 0.1*x*y + 0.2*Math.sqrt(Math.abs(x))
+  dlat += (20*Math.sin(6*x*Math.PI) + 20*Math.sin(2*x*Math.PI)) * 2/3
+  dlat += (20*Math.sin(y*Math.PI) + 40*Math.sin(y/3*Math.PI)) * 2/3
+  dlat += (160*Math.sin(y/12*Math.PI) + 320*Math.sin(y/30*Math.PI)) * 2/3
+  let dlng = 300 + x + 2*y + 0.1*x*x + 0.1*x*y + 0.1*Math.sqrt(Math.abs(x))
+  dlng += (20*Math.sin(6*x*Math.PI) + 20*Math.sin(2*x*Math.PI)) * 2/3
+  dlng += (20*Math.sin(x*Math.PI) + 40*Math.sin(x/3*Math.PI)) * 2/3
+  dlng += (150*Math.sin(x/12*Math.PI) + 300*Math.sin(x/30*Math.PI)) * 2/3
+  const radlat = lat / 180 * Math.PI
+  let magic = Math.sin(radlat); magic = 1 - ee*magic*magic
+  const sq = Math.sqrt(magic)
+  return [
+    lng + (dlng * 180) / (a / sq * Math.cos(radlat) * Math.PI),
+    lat + (dlat * 180) / ((a*(1-ee)) / (magic*sq) * Math.PI)
+  ]
+}
 
 let map = null
 let AMap = null
@@ -240,25 +295,75 @@ const selectedStation = ref(null)
 const routes = ref([])
 const currentRouteId = ref(null)
 
-// 排行卡片
-const showRanking = ref(true)
-const rankTopN = ref(20)
+// ── 站点停留分析卡片（排行 + 时长 + 散点 三合一） ──
+const showDwell = ref(true)
 const rankChartRef = ref(null)
+const rankScrollRef = ref(null)
 let rankChart = null
+const parkChartRef = ref(null)
+const parkScrollRef = ref(null)
+let parkChart = null
+const hubChartRef = ref(null)
+const hubScrollRef = ref(null)
+let hubChart = null
+const scatterChartRef = ref(null)
+let scatterChart = null
+const dwellTab = ref('dwell')
 
-async function toggleRanking() {
-  showRanking.value = !showRanking.value
-  if (showRanking.value) {
+async function toggleDwell() {
+  showDwell.value = !showDwell.value
+  if (showDwell.value) {
     await nextTick()
-    await loadRanking()
+    await loadDwellCharts()
   } else {
-    rankChart && rankChart.dispose()
-    rankChart = null
+    rankChart && rankChart.dispose(); rankChart = null
+    parkChart && parkChart.dispose(); parkChart = null
+    hubChart && hubChart.dispose(); hubChart = null
+    scatterChart && scatterChart.dispose(); scatterChart = null
   }
 }
 
+async function loadDwellCharts() {
+  if (dwellTab.value === 'dwell') {
+    await Promise.all([loadRanking(), loadParking(), loadScatter()])
+  } else {
+    await Promise.all([loadRanking(), loadHub(), loadScatter()])
+  }
+}
+
+async function switchDwellTab(tab) {
+  if (dwellTab.value === tab) return
+  // 销毁当前右列图表，切换后重建
+  if (tab === 'hub') { parkChart && parkChart.dispose(); parkChart = null }
+  else              { hubChart  && hubChart.dispose();  hubChart  = null }
+  dwellTab.value = tab
+  await nextTick()
+  await loadDwellCharts()
+}
+
+// 联动高亮状态
+const selectedRankStation = ref(null)
+
+function clearRankSelection() {
+  selectedRankStation.value = null
+  if (rankChart) loadRanking()
+  if (scatterChart) loadScatter()
+  if (dwellTab.value === 'dwell') { if (parkChart) loadParking() }
+  else { if (hubChart) loadHub() }
+}
+
+// 渲染后滚动到被高亮的站点
+function scrollToSelected(scrollEl, names) {
+  if (!selectedRankStation.value || !scrollEl) return
+  const idx = names.indexOf(selectedRankStation.value)
+  if (idx < 0) return
+  const rowH = 22
+  const fromTop = (names.length - 1 - idx) * rowH + 10
+  scrollEl.scrollTo({ top: Math.max(0, fromTop - scrollEl.clientHeight / 2), behavior: 'smooth' })
+}
+
 async function loadRanking() {
-  const res = await stationApi.ranking(rankTopN.value)
+  const res = await stationApi.ranking()
   const data = res.data
   await nextTick()
   if (!rankChartRef.value) return
@@ -268,7 +373,7 @@ async function loadRanking() {
   const names = data.map(d => d.stationName).reverse()
   const counts = data.map(d => d.parkingCount).reverse()
   rankChart.setOption({
-    grid: { left: 120, right: 50, top: 10, bottom: 20 },
+    grid: { left: 128, right: 40, top: 10, bottom: 20 },
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
@@ -278,40 +383,48 @@ async function loadRanking() {
       type: 'value',
       axisLabel: { fontSize: 10, formatter: v => v >= 10000 ? (v / 10000).toFixed(1) + '万' : v }
     },
-    yAxis: { type: 'category', data: names, axisLabel: { fontSize: 11 } },
+    yAxis: {
+      type: 'category', data: names,
+      axisLabel: {
+        fontSize: 11,
+        color: '#111827',
+        formatter: (name, idx) => {
+          const rank = names.length - idx
+          const label = name.length > 6 ? name.slice(0, 5) + '…' : name
+          return name === selectedRankStation.value
+            ? `{rk|${rank}}{hl| ${label}}`
+            : `{rk|${rank}} ${label}`
+        },
+        rich: {
+          rk: { color: '#9ca3af', fontSize: 10, width: 26, align: 'right' },
+          hl: { color: '#f59e0b', fontWeight: 'bold', fontSize: 11 }
+        }
+      }
+    },
     series: [{
       type: 'bar',
-      data: counts,
-      itemStyle: {
-        color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-          { offset: 0, color: '#93c5fd' }, { offset: 1, color: '#2563eb' }
-        ]),
-        borderRadius: [0, 4, 4, 0]
-      },
+      data: counts.map((v, i) => ({
+        value: v,
+        itemStyle: {
+          color: names[i] === selectedRankStation.value
+            ? new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+                { offset: 0, color: '#fde68a' }, { offset: 1, color: '#f59e0b' }
+              ])
+            : new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+                { offset: 0, color: '#93c5fd' }, { offset: 1, color: '#2563eb' }
+              ]),
+          borderRadius: [0, 4, 4, 0]
+        }
+      })),
       label: { show: true, position: 'right', fontSize: 10, formatter: p => p.value.toLocaleString() }
     }]
   }, true)
-}
-
-// 停靠时间卡片
-const showParking = ref(true)
-const parkTopN = ref(20)
-const parkChartRef = ref(null)
-let parkChart = null
-
-async function toggleParking() {
-  showParking.value = !showParking.value
-  if (showParking.value) {
-    await nextTick()
-    await loadParking()
-  } else {
-    parkChart && parkChart.dispose()
-    parkChart = null
-  }
+  await nextTick()
+  scrollToSelected(rankScrollRef.value, names)
 }
 
 async function loadParking() {
-  const res = await stationApi.parkingStats(parkTopN.value)
+  const res = await stationApi.parkingStats()
   const data = res.data
   await nextTick()
   if (!parkChartRef.value) return
@@ -322,7 +435,7 @@ async function loadParking() {
   const minutes = data.map(d => +(d.avgDurationSeconds / 60).toFixed(1)).reverse()
   const avg = minutes.reduce((a, b) => a + b, 0) / minutes.length
   parkChart.setOption({
-    grid: { left: 120, right: 60, top: 10, bottom: 20 },
+    grid: { left: 128, right: 50, top: 10, bottom: 20 },
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
@@ -333,41 +446,108 @@ async function loadParking() {
       axisLabel: { fontSize: 10, formatter: v => v, hideOverlap: true },
       name: 'min', nameLocation: 'end', nameTextStyle: { fontSize: 10, color: '#6b7280' }
     },
-    yAxis: { type: 'category', data: names, axisLabel: { fontSize: 11 } },
+    yAxis: {
+      type: 'category', data: names,
+      axisLabel: {
+        fontSize: 11,
+        color: '#111827',
+        formatter: (name, idx) => {
+          const rank = names.length - idx
+          const label = name.length > 6 ? name.slice(0, 5) + '…' : name
+          return name === selectedRankStation.value
+            ? `{rk|${rank}}{hl| ${label}}`
+            : `{rk|${rank}} ${label}`
+        },
+        rich: {
+          rk: { color: '#9ca3af', fontSize: 10, width: 26, align: 'right' },
+          hl: { color: '#f59e0b', fontWeight: 'bold', fontSize: 11 }
+        }
+      }
+    },
     series: [{
       type: 'bar',
-      data: minutes.map(v => ({
+      data: minutes.map((v, i) => ({
         value: v,
         itemStyle: {
-          color: v > avg * 1.5
+          color: names[i] === selectedRankStation.value
             ? new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-                { offset: 0, color: '#fca5a5' }, { offset: 1, color: '#dc2626' }
+                { offset: 0, color: '#fde68a' }, { offset: 1, color: '#f59e0b' }
               ])
-            : new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-                { offset: 0, color: '#86efac' }, { offset: 1, color: '#16a34a' }
-              ]),
+            : v > avg * 1.5
+              ? new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+                  { offset: 0, color: '#fca5a5' }, { offset: 1, color: '#dc2626' }
+                ])
+              : new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+                  { offset: 0, color: '#86efac' }, { offset: 1, color: '#16a34a' }
+                ]),
           borderRadius: [0, 4, 4, 0]
         }
       })),
       label: { show: true, position: 'right', fontSize: 10, formatter: p => p.value + ' min' }
     }]
   }, true)
+  await nextTick()
+  scrollToSelected(parkScrollRef.value, names)
 }
 
-// 停靠散点图卡片
-const showScatter = ref(true)
-const scatterChartRef = ref(null)
-let scatterChart = null
-
-async function toggleScatter() {
-  showScatter.value = !showScatter.value
-  if (showScatter.value) {
-    await nextTick()
-    await loadScatter()
-  } else {
-    scatterChart && scatterChart.dispose()
-    scatterChart = null
-  }
+async function loadHub() {
+  const res = await stationApi.hubRanking()
+  const data = res.data
+  await nextTick()
+  if (!hubChartRef.value) return
+  hubChartRef.value.style.height = (data.length * 22 + 40) + 'px'
+  if (!hubChart) hubChart = echarts.init(hubChartRef.value)
+  else hubChart.resize()
+  const names = data.map(d => d.stationName).reverse()
+  const counts = data.map(d => d.parkingCount).reverse()
+  hubChart.setOption({
+    grid: { left: 128, right: 40, top: 10, bottom: 20 },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter: p => `${p[0].name}<br/>途经线路：${p[0].value} 条`
+    },
+    xAxis: {
+      type: 'value',
+      axisLabel: { fontSize: 10 }
+    },
+    yAxis: {
+      type: 'category', data: names,
+      axisLabel: {
+        fontSize: 11, color: '#111827',
+        formatter: (name, idx) => {
+          const rank = names.length - idx
+          const label = name.length > 6 ? name.slice(0, 5) + '…' : name
+          return name === selectedRankStation.value
+            ? `{rk|${rank}}{hl| ${label}}`
+            : `{rk|${rank}} ${label}`
+        },
+        rich: {
+          rk: { color: '#9ca3af', fontSize: 10, width: 26, align: 'right' },
+          hl: { color: '#f59e0b', fontWeight: 'bold', fontSize: 11 }
+        }
+      }
+    },
+    series: [{
+      type: 'bar',
+      data: counts.map((v, i) => ({
+        value: v,
+        itemStyle: {
+          color: names[i] === selectedRankStation.value
+            ? new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+                { offset: 0, color: '#fde68a' }, { offset: 1, color: '#f59e0b' }
+              ])
+            : new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+                { offset: 0, color: '#67e8f9' }, { offset: 1, color: '#0891b2' }
+              ]),
+          borderRadius: [0, 4, 4, 0]
+        }
+      })),
+      label: { show: true, position: 'right', fontSize: 10, formatter: p => p.value + ' 条' }
+    }]
+  }, true)
+  await nextTick()
+  scrollToSelected(hubScrollRef.value, names)
 }
 
 async function loadScatter() {
@@ -378,56 +558,89 @@ async function loadScatter() {
   if (!scatterChart) scatterChart = echarts.init(scatterChartRef.value)
 
   const avgCount = data.reduce((s, d) => s + Number(d.parkingCount), 0) / data.length
-  const avgDur   = data.reduce((s, d) => s + d.avgDurationSeconds, 0) / data.length
 
-  const points = data.map(d => ({
-    value: [Number(d.parkingCount), +(d.avgDurationSeconds / 60).toFixed(2)],
-    name: d.stationName,
-    itemStyle: {
-      color: (() => {
-        const highCount = d.parkingCount > avgCount
-        const highDur   = d.avgDurationSeconds > avgDur
-        if (highCount && highDur)  return '#dc2626'
-        if (highCount && !highDur) return '#f59e0b'
-        if (!highCount && highDur) return '#8b5cf6'
-        return '#94a3b8'
-      })(),
-      opacity: 0.45,
-      borderWidth: 0
+  const isHub = dwellTab.value === 'hub'
+
+  // 枢纽模式：用 allStationsData 的 routeCount 补充 Y 轴数据
+  const routeCountMap = {}
+  if (isHub) allStationsData.forEach(s => { routeCountMap[s.stationId] = s.routeCount || 0 })
+
+  const avgY = isHub
+    ? allStationsData.reduce((s, d) => s + (d.routeCount || 0), 0) / allStationsData.length
+    : data.reduce((s, d) => s + d.avgDurationSeconds, 0) / data.length
+
+  const points = data.map(d => {
+    const isSelected = d.stationName === selectedRankStation.value
+    const yVal = isHub ? (routeCountMap[d.stationId] || 0) : +(d.avgDurationSeconds / 60).toFixed(2)
+    const highCount = Number(d.parkingCount) > avgCount
+    const highY = isHub ? yVal > avgY : d.avgDurationSeconds > avgY
+    const normalColor = highCount && highY ? '#dc2626' : highCount ? '#f59e0b' : highY ? '#8b5cf6' : '#94a3b8'
+    return {
+      value: [Number(d.parkingCount), yVal],
+      name: d.stationName,
+      symbolSize: isSelected ? 12 : 4,
+      itemStyle: {
+        color: isSelected ? '#f59e0b' : normalColor,
+        opacity: isSelected ? 1 : 0.45,
+        borderWidth: isSelected ? 2 : 0,
+        borderColor: '#fff'
+      }
     }
-  }))
+  })
 
   scatterChart.setOption({
-    grid: { left: 60, right: 20, top: 30, bottom: 50 },
+    grid: { left: 60, right: 20, top: 30, bottom: 62 },
     tooltip: {
       trigger: 'item',
-      formatter: p => `${p.data.name}<br/>停靠次数：${p.data.value[0].toLocaleString()}<br/>平均时长：${p.data.value[1]} 分钟`
+      formatter: p => isHub
+        ? `${p.data.name}<br/>停靠次数：${p.data.value[0].toLocaleString()}<br/>途经线路：${p.data.value[1]} 条`
+        : `${p.data.name}<br/>停靠次数：${p.data.value[0].toLocaleString()}<br/>平均时长：${p.data.value[1]} 分钟`
     },
     xAxis: {
-      type: 'log',   // 对数轴，拉开密集区间距
-      name: '停靠次数', nameLocation: 'middle', nameGap: 30,
+      type: 'log',
+      name: '停靠次数', nameLocation: 'middle', nameGap: 32,
+      nameTextStyle: { fontSize: 12, fontWeight: 'bold', color: '#374151' },
       axisLabel: { formatter: v => v >= 10000 ? (v/10000).toFixed(1)+'万' : v }
     },
-    yAxis: { type: 'value', name: '平均时长(分)', nameLocation: 'middle', nameGap: 40 },
+    yAxis: {
+      type: 'value',
+      name: isHub ? '途经线路数' : '平均时长(分)',
+      nameLocation: 'end', nameRotate: 0,
+      nameTextStyle: { fontSize: 12, fontWeight: 'bold', color: '#374151' }
+    },
     series: [{
       type: 'scatter',
       data: points,
-      symbolSize: 4,   // 缩小点径减少遮挡
+      symbolSize: 4,
       markLine: {
         silent: true,
         lineStyle: { color: '#9ca3af', type: 'dashed', width: 1 },
         data: [
           { xAxis: avgCount },
-          { yAxis: +(avgDur / 60).toFixed(2) }
+          { yAxis: isHub ? avgY : +(avgY / 60).toFixed(2) }
         ],
         label: { show: false }
       }
     }]
   }, true)
+
+  scatterChart.off('click')
+  scatterChart.on('click', params => {
+    if (params.componentType !== 'series') return
+    const name = params.data.name
+    selectedRankStation.value = name
+    const station = allStationsData.find(s => s.stationName === name)
+    if (station) onStationClick(station)
+    loadScatter()
+    loadRanking()
+    if (dwellTab.value === 'dwell') loadParking()
+    else loadHub()
+  })
 }
 
+
 // ── 高峰对比卡片 ──────────────────────────────────
-const showPeak = ref(true)
+const showPeak = ref(false)
 const peakTopN = ref(20)
 const peakChartRef = ref(null)
 let peakChart = null
@@ -465,7 +678,7 @@ async function loadPeak() {
 }
 
 // ── 换乘枢纽卡片 ──────────────────────────────────
-const showTransfer = ref(true)
+const showTransfer = ref(false)
 const transferTopN = ref(20)
 const transferChartRef = ref(null)
 let transferChart = null
@@ -530,7 +743,7 @@ async function loadTransfer() {
 }
 
 // ── 区域停靠时长卡片 ──────────────────────────────
-const showClusterStat = ref(true)
+const showClusterStat = ref(false)
 const clusterStatChartRef = ref(null)
 let clusterStatChart = null
 
@@ -558,12 +771,16 @@ async function loadClusterStat() {
   }
   const avg = data.reduce((s, d) => s + d.avgDurationSeconds, 0) / data.length
   clusterStatChart.setOption({
-    grid: { left: 50, right: 60, top: 10, bottom: 20 },
+    grid: { left: 50, right: 60, top: 10, bottom: 28 },
     tooltip: {
       trigger: 'axis', axisPointer: { type: 'shadow' },
       formatter: p => `簇 ${p[0].name}<br/>平均停靠：${p[0].value} 分钟<br/>站点数：${data[data.length-1-p[0].dataIndex]?.stationCount}`
     },
-    xAxis: { type: 'value', axisLabel: { formatter: v => v + ' min' } },
+    xAxis: {
+      type: 'value',
+      name: '分钟', nameLocation: 'end', nameTextStyle: { fontSize: 10, color: '#9ca3af' },
+      axisLabel: { fontSize: 10, formatter: v => v, hideOverlap: true }
+    },
     yAxis: { type: 'category', data: data.map(d => `簇${d.clusterId}`).reverse(), axisLabel: { fontSize: 10 } },
     series: [{
       type: 'bar',
@@ -600,7 +817,7 @@ async function loadHourly(stationId) {
   const hours = Array.from({length: 24}, (_, i) => i)
   const counts = hours.map(h => (data.find(d => d.hour === h)?.count) || 0)
   hourlyChart.setOption({
-    grid: { left: 35, right: 10, top: 10, bottom: 25 },
+    grid: { left: 35, right: 10, top: 22, bottom: 25 },
     tooltip: { trigger: 'axis', formatter: p => `${p[0].name}时：${p[0].value} 次` },
     xAxis: { type: 'category', data: hours.map(h => h+''), axisLabel: { fontSize: 9, interval: 2 } },
     yAxis: { type: 'value', axisLabel: { fontSize: 9 } },
@@ -608,7 +825,17 @@ async function loadHourly(stationId) {
       type: 'line', data: counts, smooth: true, areaStyle: { opacity: 0.15 },
       lineStyle: { color: '#2563eb', width: 2 },
       itemStyle: { color: '#2563eb' },
-      symbol: 'none'
+      symbol: 'none',
+      markArea: {
+        silent: true,
+        label: { fontSize: 9, position: 'insideTop' },
+        data: [
+          [{ name: '凌晨', xAxis: '0', itemStyle: { color: 'rgba(30,41,59,0.07)'    }, label: { color: '#94a3b8' } }, { xAxis: '6'  }],
+          [{ name: '上午', xAxis: '6', itemStyle: { color: 'rgba(253,186,116,0.20)' }, label: { color: '#c2410c' } }, { xAxis: '12' }],
+          [{ name: '下午', xAxis: '12', itemStyle: { color: 'rgba(125,211,252,0.18)' }, label: { color: '#0369a1' } }, { xAxis: '18' }],
+          [{ name: '晚上', xAxis: '18', itemStyle: { color: 'rgba(196,181,253,0.22)' }, label: { color: '#6d28d9' } }, { xAxis: '23' }],
+        ]
+      }
     }]
   }, true)
 }
@@ -664,17 +891,12 @@ async function loadGraph() {
     },
     series: [{
       type: 'graph',
-      layout: 'force',
+      layout: 'none',
       coordinateSystem: undefined,
-      force: {
-        repulsion: 800,
-        gravity: 0.02,
-        edgeLength: [60, 200],
-        layoutAnimation: true,
-        friction: 0.6,
-      },
       data: nodes.map(n => ({
         id: n.id,
+        x: n.x,
+        y: n.y,
         value: n.size,
         symbolSize: Math.max(7, Math.sqrt(n.size) * 1.8),
         itemStyle: { color: n.color, borderColor: 'rgba(255,255,255,0.7)', borderWidth: 1.5 },
@@ -827,7 +1049,10 @@ async function initMap() {
 async function loadStations() {
   loading.value = true
   const res = await stationApi.listAll()
-  allStationsData = res.data.filter(s => s.lng && s.lat)
+  allStationsData = res.data.filter(s => s.lng && s.lat).map(s => {
+    const [lng, lat] = wgs84ToGcj02(s.lng, s.lat)
+    return { ...s, lng, lat }
+  })
 
   // 创建热力图
   heatmap = new AMap.HeatMap(map, {
@@ -909,8 +1134,6 @@ function setMode(mode) {
 
 async function onStationClick(station) {
   selectedStation.value = station
-  const res = await stationApi.listRoutes(station.stationId)
-  routes.value = res.data
 
   if (targetMarker) targetMarker.setMap(null)
   targetMarker = new AMap.CircleMarker({
@@ -924,8 +1147,32 @@ async function onStationClick(station) {
   })
   targetMarker.setMap(map)
 
-  if (routes.value.length > 0) drawAllRoutes(routes.value)
-  if (station.stationId > 10000) loadHourly(station.stationId)
+  // 并行获取路线名称表 + 路段数据
+  const [routeRes, sectionRes] = await Promise.all([
+    stationApi.listRoutes(station.stationId),
+    sectionApi.pathsByStation(station.stationId)
+  ])
+
+  // 用 route_id → routeName 建立名称映射
+  const nameMap = {}
+  routeRes.data.forEach(r => { nameMap[String(r.routeId)] = r.routeName })
+
+  // 从 section route_number 派生路线列表，按路线前缀去重（不区分上下行）
+  const sections = sectionRes.data
+  const seen = new Set()
+  routes.value = []
+  sections.forEach(sec => {
+    const parts = sec.routeNumber.split('_')
+    const prefix = parts.slice(0, -1).join('_')  // '135' or 'K210'
+    if (seen.has(prefix)) return
+    seen.add(prefix)
+    const numId = parseInt(prefix)
+    const routeName = nameMap[String(numId)] || prefix
+    routes.value.push({ routeNumber: prefix, routeId: prefix, routeName })
+  })
+
+  drawAllRoutes(sections)
+  if (station.stationId >= 1000) loadHourly(station.stationId)
 }
 
 // 多条线路颜色池
@@ -943,47 +1190,50 @@ async function buildPolyline(route, color, showStations = false) {
     stationApi.listByRoute(route.routeId),
     sectionApi.pathsByRoute(route.routeId)
   ])
-  const stations = stationRes.data.filter(s => s.lng && s.lat && s.stationId > 10000)
+  const stations = stationRes.data.filter(s => s.lng && s.lat && s.stationId >= 1000)
   const sections = sectionRes.data
 
-  let fullPath = []
   if (sections && sections.length > 0) {
     sections.forEach(sec => {
       try {
-        const pts = JSON.parse(sec.path)
-        if (!pts || pts.length === 0) return
-        if (fullPath.length === 0) {
-          fullPath = fullPath.concat(pts)
-        } else {
-          const [lx, ly] = fullPath[fullPath.length - 1]
-          const [fx, fy] = pts[0]
-          const dist = Math.sqrt((lx - fx) ** 2 + (ly - fy) ** 2)
-          // 距离小于 0.005°(约500m) 才去掉重复点，否则直接追加避免长连线
-          fullPath = dist < 0.005 ? fullPath.concat(pts.slice(1)) : fullPath.concat(pts)
-        }
+        const pts = JSON.parse(sec.path).map(([lng, lat]) => wgs84ToGcj02(lng, lat))
+        if (!pts || pts.length < 2) return
+        const poly = new AMap.Polyline({
+          path: pts,
+          strokeColor: color,
+          strokeWeight: 4,
+          strokeOpacity: 0.85,
+          lineJoin: 'round',
+          lineCap: 'round',
+          zIndex: 10
+        })
+        poly.setMap(map)
+        routePolylines.push(poly)
       } catch (e) {}
     })
+  } else {
+    const fallbackPath = stations.map(s => wgs84ToGcj02(s.lng, s.lat))
+    if (fallbackPath.length >= 2) {
+      const poly = new AMap.Polyline({
+        path: fallbackPath,
+        strokeColor: color,
+        strokeWeight: 4,
+        strokeOpacity: 0.85,
+        lineJoin: 'round',
+        lineCap: 'round',
+        zIndex: 10
+      })
+      poly.setMap(map)
+      routePolylines.push(poly)
+    }
   }
-  if (fullPath.length === 0) fullPath = stations.map(s => [s.lng, s.lat])
-
-  const polyline = new AMap.Polyline({
-    path: fullPath,
-    strokeColor: color,
-    strokeWeight: 4,
-    strokeOpacity: 0.85,
-    lineJoin: 'round',
-    lineCap: 'round',
-    zIndex: 10
-  })
-  polyline.setMap(map)
-  routePolylines.push(polyline)
 
   // 只在查看单条线路时才显示沿线站点圆圈
   if (showStations) {
     stations.forEach(s => {
       if (s.stationId === selectedStation.value?.stationId) return
       const m = new AMap.CircleMarker({
-        center: [s.lng, s.lat],
+        center: wgs84ToGcj02(s.lng, s.lat),
         radius: 5,
         fillColor: '#ffffff',
         fillOpacity: 1,
@@ -996,11 +1246,31 @@ async function buildPolyline(route, color, showStations = false) {
   }
 }
 
-// 点击站点时：并行绘制所有途经线路（只画线，不画沿线站点）
-async function drawAllRoutes(routes) {
+// 绘制所有途经线路路段（sections 已由 onStationClick 获取，按 routeNumber 分组上色）
+function drawAllRoutes(sections) {
   clearRoutes()
-  await Promise.all(routes.map((r, i) => buildPolyline(r, ROUTE_COLORS[i % ROUTE_COLORS.length], false)))
-  map.setCenter([selectedStation.value.lng, selectedStation.value.lat])
+  const groups = {}
+  sections.forEach(sec => {
+    if (!groups[sec.routeNumber]) groups[sec.routeNumber] = []
+    groups[sec.routeNumber].push(sec)
+  })
+  Object.values(groups).forEach((segs, i) => {
+    const color = ROUTE_COLORS[i % ROUTE_COLORS.length]
+    segs.forEach(sec => {
+      try {
+        const pts = JSON.parse(sec.path).map(([lng, lat]) => wgs84ToGcj02(lng, lat))
+        if (!pts || pts.length < 2) return
+        const poly = new AMap.Polyline({
+          path: pts, strokeColor: color, strokeWeight: 4,
+          strokeOpacity: 0.85, lineJoin: 'round', lineCap: 'round', zIndex: 10
+        })
+        poly.setMap(map)
+        routePolylines.push(poly)
+      } catch (e) {}
+    })
+  })
+  const { lng, lat } = selectedStation.value
+  map.setZoomAndCenter(Math.max(map.getZoom(), 15), [lng, lat])
 }
 
 // ── 瓶颈分析 ──────────────────────────────────────
@@ -1035,7 +1305,7 @@ async function runAnalysis(routeId) {
     if (!s.lng || !s.lat) continue
     const color = anomalyColor(s.anomalyScore)
     const m = new AMap.CircleMarker({
-      center: [s.lng, s.lat],
+      center: wgs84ToGcj02(s.lng, s.lat),
       radius: 6,
       fillColor: color, fillOpacity: 0.9,
       strokeColor: '#fff', strokeWeight: 1.5,
@@ -1054,7 +1324,7 @@ async function runAnalysis(routeId) {
   for (const sec of res.data.sections) {
     if (!sec.path || sec.path.length < 2) continue
     const color = anomalyColor(sec.anomalyScore)
-    const pts = sec.path.map(p => new AMap.LngLat(p[0], p[1]))
+    const pts = sec.path.map(p => { const [lng, lat] = wgs84ToGcj02(p[0], p[1]); return new AMap.LngLat(lng, lat) })
     const poly = new AMap.Polyline({
       path: pts,
       strokeColor: color,
@@ -1087,17 +1357,39 @@ function closePanel() {
   if (targetMarker) { targetMarker.setMap(null); targetMarker = null }
 }
 
+// ── 路段测试模式 ──────────────────────────────────
+const testMode = ref(false)
+let testPolylines = []
+
+async function toggleTestMode() {
+  testMode.value = !testMode.value
+  if (testMode.value) {
+    const res = await sectionApi.allPaths()
+    res.data.forEach(sec => {
+      try {
+        const pts = JSON.parse(sec.path).map(([lng, lat]) => wgs84ToGcj02(lng, lat))
+        if (pts.length < 2) return
+        const poly = new AMap.Polyline({
+          path: pts,
+          strokeColor: '#60a5fa',
+          strokeWeight: 1.5,
+          strokeOpacity: 0.55,
+          zIndex: 1
+        })
+        poly.setMap(map)
+        testPolylines.push(poly)
+      } catch (e) {}
+    })
+  } else {
+    testPolylines.forEach(p => p.setMap(null))
+    testPolylines = []
+  }
+}
+
 onMounted(async () => {
   await initMap()
-  // 默认加载所有分析卡片
-  await Promise.all([
-    loadRanking(),
-    loadParking(),
-    loadScatter(),
-    loadPeak(),
-    loadTransfer(),
-    loadClusterStat(),
-  ])
+  // 默认加载站点停留分析卡片
+  await Promise.all([loadRanking(), loadParking(), loadScatter()])
 })
 onUnmounted(() => map && map.destroy())
 
@@ -1192,6 +1484,14 @@ const vDraggable = {
 }
 .analysis-btn:hover { background: #f3f4f6; }
 .analysis-btn.active { background: #2563eb; color: white; font-weight: 500; }
+.test-btn { border: 1.5px dashed #d1d5db; color: #9ca3af; }
+.test-btn.active { background: #7c3aed; border-color: #7c3aed; color: white; }
+.dwell-tab-btn {
+  padding: 2px 10px; font-size: 12px; font-weight: 600; border-radius: 6px;
+  border: 1.5px solid #e5e7eb; background: transparent; color: #6b7280; cursor: pointer;
+  transition: all .15s;
+}
+.dwell-tab-btn.active { background: #2563eb; border-color: #2563eb; color: #fff; }
 
 /* 停靠排行卡片 — 底部并排布局，left 由各子类覆盖 */
 .ranking-card {
@@ -1205,16 +1505,33 @@ const vDraggable = {
   margin-left: 6px; padding: 1px 6px;
   border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px;
 }
-/* 每张卡片的初始 left 位置（间距 16px，宽度统一 320px） */
-.parking-card    { left: 352px; }
-.scatter-card    { left: 688px; width: 340px; }
+/* 站点停留分析卡片 */
+.dwell-card { left: 16px; width: 700px; }
+.dwell-scatter-section { border-bottom: 1px solid #f3f4f6; }
+.dwell-section-label {
+  padding: 7px 12px 4px;
+  font-size: 11px; font-weight: 600; color: #374151;
+  display: flex; align-items: center; gap: 5px;
+}
+.dwell-scatter-chart { height: 240px !important; }
+.dwell-ranks { display: flex; border-top: 1px solid #f3f4f6; }
+.dwell-rank-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.dwell-rank-col:first-child { border-right: 1px solid #f3f4f6; }
+.dwell-rank-scroll { height: 380px; overflow-y: auto; }
+/* 兼容旧的 rank-scroll（用于非 dwell 卡片） */
+.rank-scroll { height: 470px; overflow-y: auto; }
+/* 联动高亮的站点 pill */
+.rank-selected-pill {
+  display: inline-flex; align-items: center;
+  padding: 1px 7px; border-radius: 10px; font-size: 11px;
+  background: #fef3c7; color: #92400e; border: 1px solid #fde68a;
+}
 .peak-card       { left: 1044px; width: 380px; }
 .transfer-card   { left: 1440px; width: 340px; }
 .cluster-stat-card { left: 1796px; width: 340px; }
 .cluster-stat-scroll { max-height: 420px; overflow-y: auto; }
-.graph-card      { bottom: 16px; left: 688px; width: 420px; }
-.graph-card .rank-chart { height: 400px !important; }
-.scatter-chart { height: 280px !important; }
+.graph-card      { bottom: 16px; left: 688px; width: 620px; }
+.graph-card .rank-chart { height: 540px !important; }
 .scatter-tag {
   display: inline-block; padding: 1px 7px; border-radius: 10px;
   font-size: 11px; margin-right: 6px; margin-top: 4px;
@@ -1222,7 +1539,6 @@ const vDraggable = {
 .high-freq-short { background: #fef3c7; color: #92400e; }
 .low-freq-long   { background: #ede9fe; color: #5b21b6; }
 .anomaly         { background: #fee2e2; color: #991b1b; }
-.analysis-panel { border-top: 1px solid #f3f4f6; padding: 10px 16px; }
 .analysis-panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .analysis-tabs { display: flex; gap: 4px; }
 .atab { padding: 2px 10px; font-size: 11px; border-radius: 4px; border: 1px solid #d1d5db; background: #f9fafb; cursor: pointer; color: #374151; }
@@ -1234,7 +1550,6 @@ const vDraggable = {
 .anomaly-bar { width: 4px; height: 24px; border-radius: 2px; flex-shrink: 0; }
 .analysis-name { flex: 1; color: #111827; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .analysis-val { color: #6b7280; flex-shrink: 0; }
-.hourly-section { padding: 12px 16px 0; }
 .hourly-title { font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 6px; }
 .hourly-chart { height: 120px; }
 .clear-btn {
@@ -1242,39 +1557,92 @@ const vDraggable = {
   border: 1px solid #d1d5db; background: #f9fafb; color: #374151;
 }
 .clear-btn:hover { background: #f3f4f6; }
+.map-clear-btn {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 11px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 20px;
+  border: 1px solid #e2e8f0;
+  background: rgba(255,255,255,0.92);
+  color: #64748b;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+  backdrop-filter: blur(4px);
+  transition: all 0.15s;
+  letter-spacing: 0.02em;
+}
+.map-clear-btn:hover {
+  background: #fff;
+  color: #374151;
+  border-color: #cbd5e1;
+  box-shadow: 0 3px 12px rgba(0,0,0,0.14);
+}
 .anomaly-tip { margin-left: 10px; display: inline-flex; align-items: center; gap: 3px; }
 .dot-red { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #dc2626; }
 
 /* 右侧面板 */
+/* ── 右侧面板 ── */
 .panel {
   position: absolute; top: 16px; right: 16px;
-  width: 300px; max-height: calc(100% - 32px);
-  background: white; border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
-  display: flex; flex-direction: column; z-index: 100;
+  width: 300px; max-height: calc(100vh - 32px);
+  background: #fff; border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.13);
+  display: flex; flex-direction: column; z-index: 100; overflow: hidden;
 }
+/* 头部 */
 .panel-header {
-  display: flex; justify-content: space-between; align-items: flex-start;
-  padding: 16px; border-bottom: 1px solid #e5e7eb; flex-shrink: 0;
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 14px 14px 12px;
+  background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
+  border-bottom: 1px solid #e5e7eb; flex-shrink: 0;
 }
-.station-name { font-size: 16px; font-weight: 600; color: #111827; }
-.meta { font-size: 12px; color: #6b7280; margin-top: 4px; }
+.panel-hd-icon {
+  width: 32px; height: 32px; border-radius: 8px;
+  background: #2563eb; color: #fff;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.station-name { font-size: 15px; font-weight: 700; color: #111827; line-height: 1.3; }
+.meta { font-size: 11px; color: #6b7280; margin-top: 4px; }
+.meta-tag {
+  display: inline-flex; align-items: center;
+  padding: 1px 7px; border-radius: 8px; font-size: 11px;
+  background: #f3f4f6; color: #374151;
+}
+.meta-tag.blue { background: #dbeafe; color: #1d4ed8; }
 .close {
-  background: none; border: none; font-size: 22px;
-  color: #9ca3af; cursor: pointer; line-height: 1; padding: 0 2px;
+  background: none; border: none; font-size: 20px;
+  color: #9ca3af; cursor: pointer; line-height: 1; padding: 0; flex-shrink: 0;
 }
-.route-list-title { padding: 10px 16px 4px; font-size: 12px; font-weight: 600; color: #374151; }
-.route-list { list-style: none; overflow-y: auto; }
+.close:hover { color: #374151; }
+/* 内容区（可滚动） */
+.panel-body { flex: 1; overflow-y: auto; }
+/* 各功能分区 */
+.panel-section { padding: 10px 14px 12px; border-bottom: 1px solid #f3f4f6; }
+.panel-section:last-child { border-bottom: none; }
+.panel-section-title {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 8px;
+}
+.sec-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+/* 线路列表 */
+.route-list { list-style: none; max-height: 180px; overflow-y: auto; margin: 0; padding: 0; }
 .route-list li {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 10px 16px; cursor: pointer; border-bottom: 1px solid #f3f4f6;
-  transition: background 0.1s;
+  padding: 8px 10px; cursor: pointer; border-radius: 6px;
+  transition: background 0.1s; margin-bottom: 2px;
 }
 .route-list li:hover { background: #f9fafb; }
 .route-list li.active { background: #eff6ff; }
-.route-name { font-size: 14px; color: #111827; }
-.route-list li.active .route-name { color: #2563eb; font-weight: 500; }
-.direction { font-size: 12px; color: #6b7280; }
+.route-name { font-size: 13px; color: #111827; }
+.route-list li.active .route-name { color: #2563eb; font-weight: 600; }
+.direction { font-size: 11px; color: #9ca3af; }
 
 .loading {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);

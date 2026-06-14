@@ -19,7 +19,15 @@ public class SectionService {
         return sectionMapper.selectDrivingStats(timeRange, topN);
     }
 
+    public List<SectionPathVO> getPathsByStationId(Integer stationId) {
+        return sectionMapper.selectPathsByStationId(stationId);
+    }
+
     public List<SectionPathVO> getPathsByRouteId(Integer routeId) {
         return sectionMapper.selectPathsByRouteId(routeId);
+    }
+
+    public List<SectionPathVO> getAllPaths() {
+        return sectionMapper.selectAllPaths();
     }
 }

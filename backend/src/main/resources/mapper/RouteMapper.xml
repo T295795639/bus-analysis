@@ -29,7 +29,7 @@
         INNER JOIN route_station rs ON s.station_id = rs.station_id
         INNER JOIN route r ON rs.route_id = r.route_id
         WHERE s.cluster_id = #{clusterId}
-          AND s.station_id > 10000
+          AND s.station_id >= 1000
         ORDER BY r.route_name, r.is_up_or_down
     </select>
 

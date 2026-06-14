@@ -28,14 +28,14 @@ public interface StationMapper extends BaseMapper<Station> {
     List<Station> selectStationsByRouteId(@Param("routeId") Integer routeId);
 
     /**
-     * 站点停靠次数 Top N
+     * 站点停靠次数全量排行
      */
-    List<StationRankVO> selectTopByParkingCount(@Param("topN") Integer topN);
+    List<StationRankVO> selectTopByParkingCount();
 
     /**
-     * 站点平均停靠时长 Top N（识别异常站点）
+     * 站点平均停靠时长全量排行
      */
-    List<StationParkingAvgVO> selectTopByParkingAvgDuration(@Param("topN") Integer topN);
+    List<StationParkingAvgVO> selectTopByParkingAvgDuration();
 
     List<StationParkingAvgVO> selectParkingScatter();
 
@@ -44,6 +44,9 @@ public interface StationMapper extends BaseMapper<Station> {
     List<com.nettiexj.bus.dto.HourlyCountVO> selectHourlyCount(@Param("stationId") Integer stationId);
 
     List<com.nettiexj.bus.dto.TransferHubVO> selectTransferHubs(@Param("topN") Integer topN);
+
+    /** 枢纽排行：从 section 表统计途经线路数（比 route_station 完整） */
+    List<StationRankVO> selectHubRanking();
 
     List<com.nettiexj.bus.dto.ClusterParkingVO> selectClusterParkingStats();
 

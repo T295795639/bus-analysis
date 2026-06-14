@@ -29,14 +29,12 @@ public class StationService {
         return stationMapper.selectStationsByRouteId(routeId);
     }
 
-    public List<StationRankVO> topStationsByParkingCount(Integer topN) {
-        if (topN == null || topN <= 0) topN = 20;
-        return stationMapper.selectTopByParkingCount(topN);
+    public List<StationRankVO> topStationsByParkingCount() {
+        return stationMapper.selectTopByParkingCount();
     }
 
-    public List<StationParkingAvgVO> topStationsByParkingAvgDuration(Integer topN) {
-        if (topN == null || topN <= 0) topN = 20;
-        return stationMapper.selectTopByParkingAvgDuration(topN);
+    public List<StationParkingAvgVO> topStationsByParkingAvgDuration() {
+        return stationMapper.selectTopByParkingAvgDuration();
     }
 
     public List<StationParkingAvgVO> parkingScatter() {
@@ -57,5 +55,9 @@ public class StationService {
 
     public List<com.nettiexj.bus.dto.ClusterParkingVO> clusterParkingStats() {
         return stationMapper.selectClusterParkingStats();
+    }
+
+    public List<StationRankVO> hubRanking() {
+        return stationMapper.selectHubRanking();
     }
 }

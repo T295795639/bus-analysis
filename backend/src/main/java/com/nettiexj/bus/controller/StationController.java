@@ -37,16 +37,16 @@ public class StationController {
         return Result.success(stationService.listStationsByRouteId(routeId));
     }
 
-    /** 站点停靠次数 Top N */
+    /** 站点停靠次数全量排行 */
     @GetMapping("/ranking")
-    public Result<List<StationRankVO>> ranking(@RequestParam(defaultValue = "20") Integer topN) {
-        return Result.success(stationService.topStationsByParkingCount(topN));
+    public Result<List<StationRankVO>> ranking() {
+        return Result.success(stationService.topStationsByParkingCount());
     }
 
-    /** 站点平均停靠时长 Top N（识别异常站点） */
+    /** 站点平均停靠时长全量排行 */
     @GetMapping("/parking/stats")
-    public Result<List<StationParkingAvgVO>> parkingStats(@RequestParam(defaultValue = "20") Integer topN) {
-        return Result.success(stationService.topStationsByParkingAvgDuration(topN));
+    public Result<List<StationParkingAvgVO>> parkingStats() {
+        return Result.success(stationService.topStationsByParkingAvgDuration());
     }
 
     /** 全量站点停靠散点图数据（停靠次数 × 平均时长） */
@@ -79,5 +79,11 @@ public class StationController {
     @GetMapping("/cluster/parking-stats")
     public Result<List<com.nettiexj.bus.dto.ClusterParkingVO>> clusterParkingStats() {
         return Result.success(stationService.clusterParkingStats());
+    }
+
+    /** 枢纽排行：从 section 表统计途经线路数 */
+    @GetMapping("/hub-ranking")
+    public Result<List<StationRankVO>> hubRanking() {
+        return Result.success(stationService.hubRanking());
     }
 }

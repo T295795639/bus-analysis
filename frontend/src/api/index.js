@@ -21,13 +21,18 @@ export const stationApi = {
   hourly: (stationId) => api.get(`/station/${stationId}/hourly`),
   transferHub: (topN = 20) => api.get('/station/transfer-hub', { params: { topN } }),
   clusterParkingStats: () => api.get('/station/cluster/parking-stats'),
+  hubRanking: () => api.get('/station/hub-ranking'),
 }
 
 export const sectionApi = {
   drivingStats: (timeRange = 'all', topN = 50) =>
     api.get('/section/driving/stats', { params: { timeRange, topN } }),
+  pathsByStation: (stationId) =>
+    api.get(`/section/by-station/${stationId}`),
   pathsByRoute: (routeId) =>
     api.get(`/section/by-route/${routeId}`),
+  allPaths: () =>
+    api.get('/section/all-paths'),
 }
 
 export const routeApi = {

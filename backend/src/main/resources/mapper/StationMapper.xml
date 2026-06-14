@@ -39,27 +39,22 @@
         FROM station s
         INNER JOIN route_station rs ON s.station_id = rs.station_id
         WHERE rs.route_id = #{routeId}
-          AND s.station_id > 10000
+          AND s.station_id >= 1000
         ORDER BY rs.id
     </select>
 
-    <!-- 站点停靠次数 Top N -->
+    <!-- 站点停靠次数全量排行（使用预聚合表，无 LIMIT） -->
     <select id="selectTopByParkingCount" resultType="com.nettiexj.bus.dto.StationRankVO">
         SELECT
-            s.station_id AS stationId,
+            s.station_id  AS stationId,
             s.station_name AS stationName,
             s.lng,
             s.lat,
-            cnt.parking_count AS parkingCount
-        FROM (
-            SELECT station_id, COUNT(*) AS parking_count
-            FROM station_parking
-            GROUP BY station_id
-            ORDER BY parking_count DESC
-            LIMIT #{topN}
-        ) cnt
-        INNER JOIN station s ON s.station_id = cnt.station_id
-        ORDER BY cnt.parking_count DESC
+            ps.parking_count AS parkingCount
+        FROM station_parking_summary ps
+        INNER JOIN station s ON s.station_id = ps.station_id
+        WHERE s.station_id >= 1000
+        ORDER BY ps.parking_count DESC
     </select>
 
 
@@ -74,7 +69,7 @@
             ps.parking_count            AS parkingCount
         FROM station_parking_summary ps
         INNER JOIN station s ON s.station_id = ps.station_id
-        WHERE s.station_id > 10000
+        WHERE s.station_id >= 1000
           AND ps.avg_duration_seconds > 0
     </select>
 
@@ -95,7 +90,7 @@
             3) AS peakRatio
         FROM station_parking sp
         INNER JOIN station s ON sp.station_id = s.station_id
-        WHERE s.station_id > 10000
+        WHERE s.station_id >= 1000
         GROUP BY s.station_id, s.station_name
         HAVING morningCount + eveningCount > 0
         ORDER BY peakRatio DESC
@@ -124,10 +119,27 @@
         FROM station s
         INNER JOIN route_station rs ON s.station_id = rs.station_id
         LEFT JOIN station_parking sp ON s.station_id = sp.station_id
-        WHERE s.station_id > 10000
+        WHERE s.station_id >= 1000
         GROUP BY s.station_id, s.station_name, s.lng, s.lat
         ORDER BY routeCount DESC, parkingCount DESC
         LIMIT #{topN}
+    </select>
+
+    <!-- 途经线路数排行：从 section 表统计，比 route_station 更完整 -->
+    <select id="selectHubRanking" resultType="com.nettiexj.bus.dto.StationRankVO">
+        SELECT s.station_id  AS stationId,
+               s.station_name AS stationName,
+               s.lng, s.lat,
+               COUNT(DISTINCT sec.route_number) AS parkingCount
+        FROM station s
+        JOIN (
+            SELECT DISTINCT start_station_id AS sid, route_number FROM section
+            UNION
+            SELECT DISTINCT end_station_id,   route_number FROM section
+        ) sec ON sec.sid = s.station_id
+        WHERE s.station_id >= 1000
+        GROUP BY s.station_id, s.station_name, s.lng, s.lat
+        ORDER BY parkingCount DESC
     </select>
 
     <!-- 各聚类区域停靠时长统计 -->
@@ -140,12 +152,12 @@
         FROM station_parking_summary agg
         INNER JOIN station s ON s.station_id = agg.station_id
         WHERE s.cluster_id IS NOT NULL
-          AND s.station_id > 10000
+          AND s.station_id >= 1000
         GROUP BY s.cluster_id
         ORDER BY avgDurationSeconds DESC
     </select>
 
-    <!-- 站点平均停靠时长 Top N（建议对 station_parking.station_id 建索引） -->
+    <!-- 站点平均停靠时长全量排行（无 LIMIT） -->
     <select id="selectTopByParkingAvgDuration" resultType="com.nettiexj.bus.dto.StationParkingAvgVO">
         SELECT
             s.station_id            AS stationId,
@@ -156,9 +168,9 @@
             ps.parking_count        AS parkingCount
         FROM station_parking_summary ps
         INNER JOIN station s ON s.station_id = ps.station_id
-        WHERE s.station_id > 10000
+        WHERE s.station_id >= 1000
+          AND ps.avg_duration_seconds > 0
         ORDER BY avgDurationSeconds DESC
-        LIMIT #{topN}
     </select>
 
     <!-- 路线分析：某线路所有站点 + 平均停靠时长（按途经顺序） -->
@@ -173,7 +185,7 @@
         INNER JOIN station s ON s.station_id = rs.station_id
         LEFT JOIN station_parking_summary ps ON ps.station_id = s.station_id
         WHERE rs.route_id = #{routeId}
-          AND s.station_id > 10000
+          AND s.station_id >= 1000
         ORDER BY rs.id
     </select>
 
