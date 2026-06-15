@@ -28,14 +28,14 @@ public interface StationMapper extends BaseMapper<Station> {
     List<Station> selectStationsByRouteId(@Param("routeId") Integer routeId);
 
     /**
-     * 站点停靠次数全量排行
+     * 站点停靠次数排行 Top N
      */
-    List<StationRankVO> selectTopByParkingCount();
+    List<StationRankVO> selectTopByParkingCount(@Param("topN") Integer topN);
 
     /**
-     * 站点平均停靠时长全量排行
+     * 站点平均停靠时长排行 Top N
      */
-    List<StationParkingAvgVO> selectTopByParkingAvgDuration();
+    List<StationParkingAvgVO> selectTopByParkingAvgDuration(@Param("topN") Integer topN);
 
     List<StationParkingAvgVO> selectParkingScatter();
 

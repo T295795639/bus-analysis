@@ -367,9 +367,14 @@ async function loadRanking() {
   const data = res.data
   await nextTick()
   if (!rankChartRef.value) return
-  rankChartRef.value.style.height = (data.length * 22 + 40) + 'px'
+  const rankW = rankChartRef.value.parentElement?.offsetWidth || 320
+  const rankH = data.length * 22 + 40
+  // 用父容器宽度，避免 '100%' 在 flex/scroll 内被解析为 0
+  rankChartRef.value.style.width  = rankW + 'px'
+  rankChartRef.value.style.height = rankH + 'px'
+  await new Promise(r => setTimeout(r, 0))   // 让浏览器提交布局
   if (!rankChart) rankChart = echarts.init(rankChartRef.value)
-  else rankChart.resize()
+  else rankChart.resize({ width: rankW, height: rankH })
   const names = data.map(d => d.stationName).reverse()
   const counts = data.map(d => d.parkingCount).reverse()
   rankChart.setOption({
@@ -428,9 +433,14 @@ async function loadParking() {
   const data = res.data
   await nextTick()
   if (!parkChartRef.value) return
-  parkChartRef.value.style.height = (data.length * 22 + 40) + 'px'
+  const parkW = parkChartRef.value.parentElement?.offsetWidth || 320
+  const parkH = data.length * 22 + 40
+  // 用父容器宽度，避免 '100%' 在 flex/scroll 内被解析为 0
+  parkChartRef.value.style.width  = parkW + 'px'
+  parkChartRef.value.style.height = parkH + 'px'
+  await new Promise(r => setTimeout(r, 0))   // 让浏览器提交布局
   if (!parkChart) parkChart = echarts.init(parkChartRef.value)
-  else parkChart.resize()
+  else parkChart.resize({ width: parkW, height: parkH })
   const names = data.map(d => d.stationName).reverse()
   const minutes = data.map(d => +(d.avgDurationSeconds / 60).toFixed(1)).reverse()
   const avg = minutes.reduce((a, b) => a + b, 0) / minutes.length
@@ -1388,6 +1398,7 @@ async function toggleTestMode() {
 
 onMounted(async () => {
   await initMap()
+  await nextTick()
   // 默认加载站点停留分析卡片
   await Promise.all([loadRanking(), loadParking(), loadScatter()])
 })

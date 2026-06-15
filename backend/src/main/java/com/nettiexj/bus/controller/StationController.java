@@ -37,16 +37,18 @@ public class StationController {
         return Result.success(stationService.listStationsByRouteId(routeId));
     }
 
-    /** 站点停靠次数全量排行 */
+    /** 站点停靠次数排行 Top N */
     @GetMapping("/ranking")
-    public Result<List<StationRankVO>> ranking() {
-        return Result.success(stationService.topStationsByParkingCount());
+    public Result<List<StationRankVO>> ranking(
+            @RequestParam(defaultValue = "20") Integer topN) {
+        return Result.success(stationService.topStationsByParkingCount(topN));
     }
 
-    /** 站点平均停靠时长全量排行 */
+    /** 站点平均停靠时长排行 Top N */
     @GetMapping("/parking/stats")
-    public Result<List<StationParkingAvgVO>> parkingStats() {
-        return Result.success(stationService.topStationsByParkingAvgDuration());
+    public Result<List<StationParkingAvgVO>> parkingStats(
+            @RequestParam(defaultValue = "20") Integer topN) {
+        return Result.success(stationService.topStationsByParkingAvgDuration(topN));
     }
 
     /** 全量站点停靠散点图数据（停靠次数 × 平均时长） */

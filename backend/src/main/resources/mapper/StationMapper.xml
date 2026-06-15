@@ -43,7 +43,7 @@
         ORDER BY rs.id
     </select>
 
-    <!-- 站点停靠次数全量排行（使用预聚合表，无 LIMIT） -->
+    <!-- 站点停靠次数排行 Top N（使用预聚合表） -->
     <select id="selectTopByParkingCount" resultType="com.nettiexj.bus.dto.StationRankVO">
         SELECT
             s.station_id  AS stationId,
@@ -55,6 +55,7 @@
         INNER JOIN station s ON s.station_id = ps.station_id
         WHERE s.station_id >= 1000
         ORDER BY ps.parking_count DESC
+        LIMIT #{topN}
     </select>
 
 
@@ -157,7 +158,7 @@
         ORDER BY avgDurationSeconds DESC
     </select>
 
-    <!-- 站点平均停靠时长全量排行（无 LIMIT） -->
+    <!-- 站点平均停靠时长排行 Top N -->
     <select id="selectTopByParkingAvgDuration" resultType="com.nettiexj.bus.dto.StationParkingAvgVO">
         SELECT
             s.station_id            AS stationId,
@@ -171,6 +172,7 @@
         WHERE s.station_id >= 1000
           AND ps.avg_duration_seconds > 0
         ORDER BY avgDurationSeconds DESC
+        LIMIT #{topN}
     </select>
 
     <!-- 路线分析：某线路所有站点 + 平均停靠时长（按途经顺序） -->

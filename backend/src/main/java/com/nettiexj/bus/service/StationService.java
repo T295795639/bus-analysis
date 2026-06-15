@@ -29,12 +29,12 @@ public class StationService {
         return stationMapper.selectStationsByRouteId(routeId);
     }
 
-    public List<StationRankVO> topStationsByParkingCount() {
-        return stationMapper.selectTopByParkingCount();
+    public List<StationRankVO> topStationsByParkingCount(Integer topN) {
+        return stationMapper.selectTopByParkingCount(topN == null || topN <= 0 ? 20 : topN);
     }
 
-    public List<StationParkingAvgVO> topStationsByParkingAvgDuration() {
-        return stationMapper.selectTopByParkingAvgDuration();
+    public List<StationParkingAvgVO> topStationsByParkingAvgDuration(Integer topN) {
+        return stationMapper.selectTopByParkingAvgDuration(topN == null || topN <= 0 ? 20 : topN);
     }
 
     public List<StationParkingAvgVO> parkingScatter() {
