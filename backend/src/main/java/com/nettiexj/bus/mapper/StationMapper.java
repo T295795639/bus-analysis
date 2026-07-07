@@ -51,4 +51,6 @@ public interface StationMapper extends BaseMapper<Station> {
     List<com.nettiexj.bus.dto.ClusterParkingVO> selectClusterParkingStats();
 
     List<com.nettiexj.bus.dto.StationAnalysisVO> selectStationAnalysisByRouteId(@Param("routeId") Integer routeId);
+
+    List<com.nettiexj.bus.dto.StationAnalysisVO> selectRouteStationAnalysisByRouteId(@Param("routeId") Integer routeId);
 }

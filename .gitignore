@@ -6,6 +6,17 @@ frontend/dist/
 backend/target/
 backend/.idea/
 backend/*.iml
+backend/*.log
+backend/delete
+backend/stop
+backend/scripts/__pycache__/
+
+# Local database dumps and repair reports
+*.sql
+db_backup*/
+repair_*_preview/
+repair_all_report/
+serve_db.py
 
 # Claude Code internal
 .claude/

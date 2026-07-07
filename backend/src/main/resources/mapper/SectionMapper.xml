@@ -45,24 +45,126 @@
 
     <!-- 按线路ID获取有序路段 path（保留，供线路分析页使用） -->
     <select id="selectPathsByRouteId" resultType="com.nettiexj.bus.dto.SectionPathVO">
+        WITH first_route_station AS (
+            SELECT rs.station_id
+            FROM route_station rs
+            WHERE rs.route_id = #{routeId}
+              AND rs.station_id &gt; 10000
+            ORDER BY rs.id
+            LIMIT 1
+        ),
+        endpoints AS (
+            SELECT
+                sec.route_number,
+                sec.start_station_id AS station_id,
+                CAST(SUBSTRING_INDEX(sec.section_id, '_', -1) AS UNSIGNED) * 2 AS sort_order
+            FROM section sec
+            WHERE sec.route_number LIKE CONCAT(#{routeId}, '_%')
+            UNION ALL
+            SELECT
+                sec.route_number,
+                sec.end_station_id AS station_id,
+                CAST(SUBSTRING_INDEX(sec.section_id, '_', -1) AS UNSIGNED) * 2 + 1 AS sort_order
+            FROM section sec
+            WHERE sec.route_number LIKE CONCAT(#{routeId}, '_%')
+        ),
+        first_section_station AS (
+            SELECT e.route_number, e.station_id
+            FROM endpoints e
+            JOIN (
+                SELECT route_number, MIN(sort_order) AS sort_order
+                FROM endpoints
+                WHERE station_id &gt; 10000
+                GROUP BY route_number
+            ) first_ep ON first_ep.route_number = e.route_number
+                      AND first_ep.sort_order = e.sort_order
+        ),
+        selected_route AS (
+            SELECT route_number
+            FROM (
+                SELECT fss.route_number, 0 AS priority
+                FROM first_section_station fss
+                WHERE fss.station_id = (SELECT station_id FROM first_route_station)
+                UNION ALL
+                SELECT CONCAT(
+                    #{routeId}, '_',
+                    CASE r.is_up_or_down
+                        WHEN '上行' THEN 'up'
+                        WHEN '下行' THEN 'down'
+                        ELSE r.is_up_or_down
+                    END
+                ) AS route_number, 1 AS priority
+                FROM route r
+                WHERE r.route_id = #{routeId}
+            ) candidates
+            ORDER BY priority
+            LIMIT 1
+        )
         SELECT
             s.section_id AS sectionId,
             s.path       AS path
         FROM section s
-        JOIN route r ON r.route_id = #{routeId}
-        WHERE s.route_number = CONCAT(
-                  #{routeId}, '_',
-                  CASE r.is_up_or_down
-                      WHEN '上行' THEN 'up'
-                      WHEN '下行' THEN 'down'
-                      ELSE r.is_up_or_down
-                  END
-              )
-        ORDER BY s.section_id
+        WHERE s.route_number = (SELECT route_number FROM selected_route)
+        ORDER BY CAST(SUBSTRING_INDEX(s.section_id, '_', -1) AS UNSIGNED)
     </select>
 
     <!-- 路线分析：某线路所有路段 + 平均行驶时长 -->
     <select id="selectSectionAnalysisByRouteId" resultType="com.nettiexj.bus.dto.SectionAnalysisRawVO">
+        WITH first_route_station AS (
+            SELECT rs.station_id
+            FROM route_station rs
+            WHERE rs.route_id = #{routeId}
+              AND rs.station_id &gt; 10000
+            ORDER BY rs.id
+            LIMIT 1
+        ),
+        endpoints AS (
+            SELECT
+                sec.route_number,
+                sec.start_station_id AS station_id,
+                CAST(SUBSTRING_INDEX(sec.section_id, '_', -1) AS UNSIGNED) * 2 AS sort_order
+            FROM section sec
+            WHERE sec.route_number LIKE CONCAT(#{routeId}, '_%')
+            UNION ALL
+            SELECT
+                sec.route_number,
+                sec.end_station_id AS station_id,
+                CAST(SUBSTRING_INDEX(sec.section_id, '_', -1) AS UNSIGNED) * 2 + 1 AS sort_order
+            FROM section sec
+            WHERE sec.route_number LIKE CONCAT(#{routeId}, '_%')
+        ),
+        first_section_station AS (
+            SELECT e.route_number, e.station_id
+            FROM endpoints e
+            JOIN (
+                SELECT route_number, MIN(sort_order) AS sort_order
+                FROM endpoints
+                WHERE station_id &gt; 10000
+                GROUP BY route_number
+            ) first_ep ON first_ep.route_number = e.route_number
+                      AND first_ep.sort_order = e.sort_order
+        ),
+        selected_route AS (
+            SELECT route_number
+            FROM (
+                SELECT fss.route_number, 0 AS priority
+                FROM first_section_station fss
+                WHERE fss.station_id = (SELECT station_id FROM first_route_station)
+                UNION ALL
+                SELECT CONCAT(
+                    #{routeId}, '_',
+                    CASE r.is_up_or_down
+                        WHEN '上行' THEN 'up'
+                        WHEN '下行' THEN 'down'
+                        ELSE r.is_up_or_down
+                    END
+                ) AS route_number, 1 AS priority
+                FROM route r
+                WHERE r.route_id = #{routeId}
+            ) candidates
+            ORDER BY priority
+            LIMIT 1
+        )
         SELECT
             s.section_id   AS sectionId,
             CONCAT(COALESCE(ss.station_name, s.start_station_id), ' → ', COALESCE(es.station_name, s.end_station_id)) AS sectionName,
@@ -73,11 +175,8 @@
         LEFT JOIN station ss ON ss.station_id = s.start_station_id
         LEFT JOIN station es ON es.station_id = s.end_station_id
         LEFT JOIN section_driving_summary sds ON sds.section_id = s.section_id
-        WHERE s.route_number = CONCAT(
-                  #{routeId}, '_',
-                  CASE r.is_up_or_down WHEN '上行' THEN 'up' WHEN '下行' THEN 'down' ELSE r.is_up_or_down END
-              )
-        ORDER BY s.section_id
+        WHERE s.route_number = (SELECT route_number FROM selected_route)
+        ORDER BY CAST(SUBSTRING_INDEX(s.section_id, '_', -1) AS UNSIGNED)
     </select>
 
     <!-- 测试用：全量路段 path -->

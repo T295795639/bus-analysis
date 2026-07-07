@@ -7,7 +7,7 @@
       <div class="mode-btns">
         <button :class="{ active: displayMode === 'heat' }" @click="setMode('heat')">热力图</button>
         <button :class="{ active: displayMode === 'dot' }" @click="setMode('dot')">站点图</button>
-        <button :class="{ active: displayMode === 'cluster' }" @click="setClusterMode">聚类视图</button>
+        <button :class="{ active: displayMode === 'cluster' }" @click="setClusterMode">区域视图</button>
       </div>
       <div v-if="displayMode !== 'cluster'" class="legend">
         <div class="legend-title">途经线路数</div>
@@ -19,7 +19,7 @@
         </div>
       </div>
       <div v-else class="legend">
-        <div class="legend-title">站点聚类（共110簇）</div>
+        <div class="legend-title">站点区域（共110个）</div>
         <div class="legend-items">
           <span v-for="(c, i) in CLUSTER_PALETTE" :key="i" class="dot" :style="{ background: c }"></span>
         </div>
@@ -142,7 +142,7 @@
     <div v-if="showClusterStat" v-draggable class="ranking-card cluster-stat-card">
       <div class="panel-header">
         <div><div class="station-name">各区域平均停靠时长</div>
-          <div class="meta">110个聚类簇，按时长排序</div></div>
+          <div class="meta">110个区域，按时长排序</div></div>
         <button class="close" @click="showClusterStat = false">×</button>
       </div>
       <div class="cluster-stat-scroll">
@@ -154,8 +154,8 @@
     <div v-if="showGraph" v-draggable class="ranking-card graph-card">
       <div class="panel-header">
         <div>
-          <div class="station-name">簇间邻接网络</div>
-          <div class="meta">节点大小 = 站点数，位置与地图地理方位对应</div>
+          <div class="station-name">区域连通网络</div>
+          <div class="meta">节点编号 = 区域编号，位置与地图地理方位对应</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           <button class="clear-btn" @click="clearClusterSelection">清除</button>
@@ -193,11 +193,13 @@
           <div class="panel-section-title">
             <span class="sec-dot" style="background:#2563eb"></span>途经线路
           </div>
+          <div class="route-section-hint">选择一条线路，查看该线路的慢站点与拥堵路段</div>
           <ul class="route-list">
             <li v-for="r in routes" :key="r.routeId"
                 :class="{ active: currentRouteId === r.routeId }"
                 @click="drawRoute(r)">
               <span class="route-name">{{ r.routeName }}</span>
+              <span class="route-action">{{ currentRouteId === r.routeId ? '分析中' : '查看瓶颈' }}</span>
             </li>
           </ul>
         </div>
@@ -227,17 +229,27 @@
             <span class="legend-dot" style="background:#ef4444;margin-left:8px"></span>异常
           </div>
           <ul v-if="analysisTab==='station'" class="analysis-list">
-            <li v-for="s in [...analysisData.stations].filter(s=>s.avgDuration>0).sort((a,b)=>b.anomalyScore-a.anomalyScore).slice(0,10)"
-                :key="s.stationId" class="analysis-item">
+            <li v-for="(s, idx) in analysisData.stations.filter(s=>s.avgDuration>0)"
+                :key="s.stationId"
+                class="analysis-item clickable"
+                @mouseenter="highlightAnalysisStation(s)"
+                @mouseleave="resetAnalysisStationHighlight"
+                @click="focusAnalysisStation(s)">
               <span class="anomaly-bar" :style="{background: anomalyColor(s.anomalyScore)}"></span>
+              <span class="analysis-index">{{ idx + 1 }}</span>
               <span class="analysis-name">{{ s.stationName }}</span>
               <span class="analysis-val">{{ (s.avgDuration/60).toFixed(1) }} 分钟</span>
             </li>
           </ul>
           <ul v-if="analysisTab==='section'" class="analysis-list">
-            <li v-for="s in [...analysisData.sections].filter(s=>s.avgDuration>0).sort((a,b)=>b.anomalyScore-a.anomalyScore).slice(0,10)"
-                :key="s.sectionId" class="analysis-item">
+            <li v-for="(s, idx) in [...analysisData.sections].filter(s=>s.avgDuration>0).sort((a,b)=>b.anomalyScore-a.anomalyScore).slice(0,10)"
+                :key="s.sectionId"
+                class="analysis-item clickable"
+                @mouseenter="highlightAnalysisSection(s)"
+                @mouseleave="resetAnalysisSectionHighlight"
+                @click="focusAnalysisSection(s)">
               <span class="anomaly-bar" :style="{background: anomalyColor(s.anomalyScore)}"></span>
+              <span class="analysis-index">{{ idx + 1 }}</span>
               <span class="analysis-name">{{ s.sectionName }}</span>
               <span class="analysis-val">{{ (s.avgDuration/60).toFixed(1) }} 分钟</span>
             </li>
@@ -290,13 +302,13 @@ let routePolylines = []   // 支持同时绘制多条线路
 let targetMarker = null
 
 const loading = ref(true)
-const displayMode = ref('heat')
+const displayMode = ref('cluster')
 const selectedStation = ref(null)
 const routes = ref([])
 const currentRouteId = ref(null)
 
 // ── 站点停留分析卡片（排行 + 时长 + 散点 三合一） ──
-const showDwell = ref(true)
+const showDwell = ref(false)
 const rankChartRef = ref(null)
 const rankScrollRef = ref(null)
 let rankChart = null
@@ -784,14 +796,14 @@ async function loadClusterStat() {
     grid: { left: 50, right: 60, top: 10, bottom: 28 },
     tooltip: {
       trigger: 'axis', axisPointer: { type: 'shadow' },
-      formatter: p => `簇 ${p[0].name}<br/>平均停靠：${p[0].value} 分钟<br/>站点数：${data[data.length-1-p[0].dataIndex]?.stationCount}`
+      formatter: p => `区域 ${p[0].name}<br/>平均停靠：${p[0].value} 分钟<br/>站点数：${data[data.length-1-p[0].dataIndex]?.stationCount}`
     },
     xAxis: {
       type: 'value',
       name: '分钟', nameLocation: 'end', nameTextStyle: { fontSize: 10, color: '#9ca3af' },
       axisLabel: { fontSize: 10, formatter: v => v, hideOverlap: true }
     },
-    yAxis: { type: 'category', data: data.map(d => `簇${d.clusterId}`).reverse(), axisLabel: { fontSize: 10 } },
+    yAxis: { type: 'category', data: data.map(d => `区域${d.clusterId}`).reverse(), axisLabel: { fontSize: 10 } },
     series: [{
       type: 'bar',
       data: data.map(d => ({
@@ -851,8 +863,8 @@ async function loadHourly(stationId) {
 }
 
 // 聚类网络图卡片
-let selectedClusterId = null  // 当前选中的簇
-const showGraph = ref(false)
+let selectedClusterId = null  // 当前选中的区域
+const showGraph = ref(true)
 const graphChartRef = ref(null)
 let graphChart = null
 
@@ -882,6 +894,48 @@ async function setClusterMode() {
 
 let graphNodes = []
 
+function spreadGraphNodes(items) {
+  const nodes = items.map(n => ({
+    ...n,
+    baseX: n.x,
+    baseY: n.y,
+    x: 50 + (n.x - 50) * 1.18,
+    y: 50 + (n.y - 50) * 1.18
+  }))
+  const minDist = 5.8
+  for (let iter = 0; iter < 90; iter++) {
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const a = nodes[i]
+        const b = nodes[j]
+        let dx = b.x - a.x
+        let dy = b.y - a.y
+        let dist = Math.sqrt(dx * dx + dy * dy)
+        if (dist < 0.01) {
+          dx = ((i % 5) - 2) * 0.01
+          dy = ((j % 5) - 2) * 0.01
+          dist = 0.01
+        }
+        if (dist >= minDist) continue
+        const push = (minDist - dist) * 0.5
+        const nx = dx / dist
+        const ny = dy / dist
+        a.x -= nx * push
+        a.y -= ny * push
+        b.x += nx * push
+        b.y += ny * push
+      }
+    }
+    nodes.forEach(n => {
+      n.x += (n.baseX - n.x) * 0.015
+      n.y += (n.baseY - n.y) * 0.015
+      n.x = Math.max(1.5, Math.min(98.5, n.x))
+      n.y = Math.max(1.5, Math.min(98.5, n.y))
+    })
+  }
+  return nodes
+}
+
 async function loadGraph() {
   const res = await fetch('/cluster_graph.json')
   const { nodes, edges } = await res.json()
@@ -891,10 +945,24 @@ async function loadGraph() {
   if (!graphChart) graphChart = echarts.init(graphChartRef.value)
   else graphChart.resize()
 
+  const xs = nodes.map(n => Number(n.x))
+  const ys = nodes.map(n => Number(n.y))
+  const minX = Math.min(...xs)
+  const maxX = Math.max(...xs)
+  const minY = Math.min(...ys)
+  const maxY = Math.max(...ys)
+  const spanX = maxX - minX || 1
+  const spanY = maxY - minY || 1
+  const graphData = spreadGraphNodes(nodes.map(n => ({
+    ...n,
+    x: 2 + ((Number(n.x) - minX) / spanX) * 96,
+    y: 2 + ((Number(n.y) - minY) / spanY) * 96
+  })))
+
   graphChart.setOption({
     tooltip: {
       formatter: p => {
-        if (p.dataType === 'node') return `簇 ${p.data.id}<br/>站点数：${p.data.value}`
+        if (p.dataType === 'node') return `区域 ${p.data.id}<br/>站点数：${p.data.value}`
         if (p.dataType === 'edge') return `连通线路数：${p.data.value}`
         return ''
       }
@@ -903,15 +971,23 @@ async function loadGraph() {
       type: 'graph',
       layout: 'none',
       coordinateSystem: undefined,
-      data: nodes.map(n => ({
+      data: graphData.map(n => ({
         id: n.id,
+        name: String(n.id),
         x: n.x,
         y: n.y,
         value: n.size,
-        symbolSize: Math.max(7, Math.sqrt(n.size) * 1.8),
-        itemStyle: { color: n.color, borderColor: 'rgba(255,255,255,0.7)', borderWidth: 1.5 },
+        symbolSize: 16,
+        itemStyle: { color: n.color, borderColor: 'rgba(255,255,255,0.82)', borderWidth: 1.5 },
         select: { itemStyle: { borderColor: '#ffffff', borderWidth: 3, shadowBlur: 8, shadowColor: 'rgba(0,0,0,0.4)' } },
-        label: { show: false }
+        label: {
+          show: true,
+          position: 'inside',
+          formatter: '{b}',
+          color: '#ffffff',
+          fontSize: 7,
+          fontWeight: 700
+        }
       })),
       edges: edges.map(e => ({
         source: e.source,
@@ -924,6 +1000,7 @@ async function loadGraph() {
         }
       })),
       roam: true,
+      zoom: 0.98,
       selectedMode: 'single',
       emphasis: {
         focus: 'adjacency',
@@ -937,6 +1014,7 @@ async function loadGraph() {
     if (params.dataType !== 'node') return
     const clusterId = Number(params.data.id)
     selectedClusterId = clusterId
+    focusClusterOnMap(clusterId)
     highlightCluster(clusterId)
     onClusterClick(clusterId, params.data.value)
     // 图表内保持选中高亮
@@ -946,10 +1024,11 @@ async function loadGraph() {
 
 async function onClusterClick(clusterId, stationCount) {
   clearRoutes()
-  // 复用右侧面板：用一个虚拟"站点"对象表示簇
+  clearAnalysis()
+  // 复用右侧面板：用一个虚拟"站点"对象表示区域
   selectedStation.value = {
     stationId: null,
-    stationName: `簇 ${clusterId}`,
+    stationName: `区域 ${clusterId}`,
     _isCluster: true,
     _clusterId: clusterId,
     _stationCount: stationCount,
@@ -957,6 +1036,7 @@ async function onClusterClick(clusterId, stationCount) {
   const res = await routeApi.byCluster(clusterId)
   routes.value = res.data
   currentRouteId.value = null
+  await drawRoutePreview(routes.value)
 }
 
 function highlightCluster(clusterId) {
@@ -970,12 +1050,36 @@ function highlightCluster(clusterId) {
   })
 }
 
+function muteClusterMarkers() {
+  clusterMarkers.forEach(m => {
+    m.setOptions({ radius: 2.5, fillOpacity: 0.08, strokeWeight: 0, zIndex: 30 })
+  })
+}
+
+function focusClusterOnMap(clusterId) {
+  if (!map) return
+  const stations = allStationsData.filter(s => Number(s.clusterId) === Number(clusterId))
+  if (!stations.length) return
+
+  const center = stations.reduce((acc, s) => {
+    acc.lng += Number(s.lng)
+    acc.lat += Number(s.lat)
+    return acc
+  }, { lng: 0, lat: 0 })
+  center.lng /= stations.length
+  center.lat /= stations.length
+
+  map.setZoomAndCenter(Math.max(map.getZoom(), 14), [center.lng, center.lat])
+}
+
 function clearClusterSelection() {
   selectedClusterId = null
   resetClusterHighlight()
   clearRoutes()
+  clearAnalysis()
   selectedStation.value = null
   routes.value = []
+  currentRouteId.value = null
   if (graphChart) graphChart.dispatchAction({ type: 'unselect', seriesIndex: 0 })
 }
 
@@ -988,7 +1092,7 @@ function resetClusterHighlight() {
 const ZOOM_TO_DOT  = 11
 const ZOOM_TO_HEAT = 11
 
-// 图着色结果：相邻簇颜色不同，16色覆盖110簇
+// 图着色结果：相邻区域颜色不同，16色覆盖110个区域
 const CLUSTER_COLOR_MAP = {"0":"#e6194b","1":"#3cb44b","2":"#e6194b","3":"#3cb44b","4":"#e6194b","5":"#3cb44b","6":"#e6194b","7":"#4363d8","8":"#e6194b","9":"#3cb44b","10":"#4363d8","11":"#e6194b","12":"#e6194b","13":"#3cb44b","14":"#3cb44b","15":"#f58231","16":"#911eb4","17":"#3cb44b","18":"#911eb4","19":"#42d4f4","20":"#f032e6","21":"#f58231","22":"#f58231","23":"#e6194b","24":"#911eb4","25":"#42d4f4","26":"#bfef45","27":"#469990","28":"#4363d8","29":"#469990","30":"#e6194b","31":"#800000","32":"#f032e6","33":"#f58231","34":"#800000","35":"#42d4f4","36":"#aaffc3","37":"#4363d8","38":"#aaffc3","39":"#9a6324","40":"#f58231","41":"#911eb4","42":"#000075","43":"#f58231","44":"#4363d8","45":"#a9a9a9","46":"#bfef45","47":"#ffe119","48":"#f032e6","49":"#0082c8","50":"#000075","51":"#800000","52":"#42d4f4","53":"#9a6324","54":"#f032e6","55":"#911eb4","56":"#f58231","57":"#bfef45","58":"#f032e6","59":"#800000","60":"#911eb4","61":"#e6194b","62":"#aaffc3","63":"#4363d8","64":"#a9a9a9","65":"#3cb44b","66":"#4363d8","67":"#42d4f4","68":"#911eb4","69":"#3cb44b","70":"#42d4f4","71":"#bfef45","72":"#469990","73":"#ffe119","74":"#bfef45","75":"#4363d8","76":"#000075","77":"#4363d8","78":"#469990","79":"#0082c8","80":"#e6194b","81":"#9a6324","82":"#aaffc3","83":"#f58231","84":"#911eb4","85":"#3cb44b","86":"#f032e6","87":"#f032e6","88":"#42d4f4","89":"#9a6324","90":"#aaffc3","91":"#9a6324","92":"#469990","93":"#9a6324","94":"#bfef45","95":"#469990","96":"#e6194b","97":"#000075","98":"#4363d8","99":"#42d4f4","100":"#ffe119","101":"#000075","102":"#f032e6","103":"#bfef45","104":"#aaffc3","105":"#a9a9a9","106":"#aaffc3","107":"#9a6324","108":"#000075","109":"#ffe119"}
 const CLUSTER_PALETTE = [...new Set(Object.values(CLUSTER_COLOR_MAP))]
 let clusterMarkers = []
@@ -1098,8 +1202,8 @@ async function loadStations() {
     stationMarkers.push(marker)
   })
 
-  // 默认热力图模式
-  setMode('heat')
+  // 默认聚类视图，和网络图形成区域联动入口
+  setMode('cluster')
   loading.value = false
 }
 
@@ -1195,12 +1299,46 @@ function clearRoutes() {
   highlightedMarkers = []
 }
 
+function fitCurrentRouteView() {
+  const overlays = [...routePolylines, ...highlightedMarkers]
+  if (!map || overlays.length === 0) return
+  map.setFitView(overlays, false, [72, 360, 72, 32])
+}
+
+async function drawRoutePreview(routeList) {
+  const results = await Promise.allSettled(routeList.map(r => sectionApi.pathsByRoute(r.routeId)))
+
+  results.forEach((result, i) => {
+    if (result.status !== 'fulfilled') return
+    const sections = result.value.data || []
+    const color = ROUTE_COLORS[i % ROUTE_COLORS.length]
+
+    sections.forEach(sec => {
+      try {
+        const pts = JSON.parse(sec.path).map(([lng, lat]) => wgs84ToGcj02(lng, lat))
+        if (!pts || pts.length < 2) return
+        const poly = new AMap.Polyline({
+          path: pts,
+          strokeColor: color,
+          strokeWeight: 2.5,
+          strokeOpacity: 0.28,
+          lineJoin: 'round',
+          lineCap: 'round',
+          zIndex: 8
+        })
+        poly.setMap(map)
+        routePolylines.push(poly)
+      } catch (e) {}
+    })
+  })
+}
+
 async function buildPolyline(route, color, showStations = false) {
   const [stationRes, sectionRes] = await Promise.all([
     stationApi.listByRoute(route.routeId),
     sectionApi.pathsByRoute(route.routeId)
   ])
-  const stations = stationRes.data.filter(s => s.lng && s.lat && s.stationId >= 1000)
+  const stations = stationRes.data.filter(s => s.lng && s.lat && s.stationId > 10000)
   const sections = sectionRes.data
 
   if (sections && sections.length > 0) {
@@ -1211,8 +1349,8 @@ async function buildPolyline(route, color, showStations = false) {
         const poly = new AMap.Polyline({
           path: pts,
           strokeColor: color,
-          strokeWeight: 4,
-          strokeOpacity: 0.85,
+          strokeWeight: 3,
+          strokeOpacity: 0.42,
           lineJoin: 'round',
           lineCap: 'round',
           zIndex: 10
@@ -1221,21 +1359,6 @@ async function buildPolyline(route, color, showStations = false) {
         routePolylines.push(poly)
       } catch (e) {}
     })
-  } else {
-    const fallbackPath = stations.map(s => wgs84ToGcj02(s.lng, s.lat))
-    if (fallbackPath.length >= 2) {
-      const poly = new AMap.Polyline({
-        path: fallbackPath,
-        strokeColor: color,
-        strokeWeight: 4,
-        strokeOpacity: 0.85,
-        lineJoin: 'round',
-        lineCap: 'round',
-        zIndex: 10
-      })
-      poly.setMap(map)
-      routePolylines.push(poly)
-    }
   }
 
   // 只在查看单条线路时才显示沿线站点圆圈
@@ -1244,16 +1367,38 @@ async function buildPolyline(route, color, showStations = false) {
       if (s.stationId === selectedStation.value?.stationId) return
       const m = new AMap.CircleMarker({
         center: wgs84ToGcj02(s.lng, s.lat),
-        radius: 5,
-        fillColor: '#ffffff',
-        fillOpacity: 1,
+        radius: 3.8,
+        fillColor: color,
+        fillOpacity: 0.55,
         strokeColor: color,
-        strokeWeight: 2
+        strokeOpacity: 0.35,
+        strokeWeight: 0.8,
+        zIndex: 60
       })
       m.setMap(map)
       highlightedMarkers.push(m)
     })
   }
+}
+
+async function drawRouteStations(route, color) {
+  const stationRes = await stationApi.listByRoute(route.routeId)
+  const stations = stationRes.data.filter(s => s.lng && s.lat && s.stationId > 10000)
+  stations.forEach(s => {
+    if (s.stationId === selectedStation.value?.stationId) return
+    const m = new AMap.CircleMarker({
+      center: wgs84ToGcj02(s.lng, s.lat),
+      radius: 3.8,
+      fillColor: color,
+      fillOpacity: 0.55,
+      strokeColor: color,
+      strokeOpacity: 0.35,
+      strokeWeight: 0.8,
+      zIndex: 60
+    })
+    m.setMap(map)
+    highlightedMarkers.push(m)
+  })
 }
 
 // 绘制所有途经线路路段（sections 已由 onStationClick 获取，按 routeNumber 分组上色）
@@ -1287,6 +1432,12 @@ function drawAllRoutes(sections) {
 const analysisData = ref(null)        // RouteAnalysisVO
 const analysisMarkers = []            // 站点颜色 Marker
 const analysisSections = []           // 路段颜色 Polyline
+const analysisStationLabels = []      // 地图站点序号
+const analysisStationMarkerMap = new Map()
+const analysisSectionMap = new Map()
+let activeAnalysisStationMarker = null
+let activeAnalysisStationHalo = null
+let activeAnalysisSection = null
 const showAnalysis = ref(false)
 const analysisTab = ref('station')    // 'station' | 'section'
 
@@ -1296,11 +1447,132 @@ function anomalyColor(score) {
   return '#ef4444'
 }
 
+function stationBottleneckStyle(score) {
+  if (!score || score < 1.0) {
+    return { radius: 4.5, fillOpacity: 0.78, strokeWeight: 1, zIndex: 115 }
+  }
+  if (score < 1.5) {
+    return { radius: 6, fillOpacity: 0.88, strokeWeight: 1.4, zIndex: 120 }
+  }
+  return { radius: 7, fillOpacity: 0.94, strokeWeight: 1.8, zIndex: 125 }
+}
+
+function applyStationMarkerStyle(marker, station, active = false) {
+  const color = anomalyColor(station.anomalyScore)
+  const style = stationBottleneckStyle(station.anomalyScore)
+  marker.setOptions({
+    radius: active ? style.radius + 3 : style.radius,
+    fillColor: color,
+    fillOpacity: active ? 1 : style.fillOpacity,
+    strokeColor: '#ffffff',
+    strokeOpacity: active ? 1 : 0.9,
+    strokeWeight: active ? 3 : style.strokeWeight,
+    zIndex: active ? 180 : style.zIndex
+  })
+}
+
+function resetAnalysisStationHighlight() {
+  if (!activeAnalysisStationMarker) return
+  const station = activeAnalysisStationMarker.getExtData()
+  applyStationMarkerStyle(activeAnalysisStationMarker, station, false)
+  activeAnalysisStationMarker = null
+  if (activeAnalysisStationHalo) {
+    activeAnalysisStationHalo.setMap(null)
+    activeAnalysisStationHalo = null
+  }
+}
+
+function highlightAnalysisStation(station) {
+  resetAnalysisStationHighlight()
+  const marker = analysisStationMarkerMap.get(Number(station.stationId))
+  if (!marker) return
+  activeAnalysisStationMarker = marker
+  applyStationMarkerStyle(marker, station, true)
+  const color = anomalyColor(station.anomalyScore)
+  const style = stationBottleneckStyle(station.anomalyScore)
+  activeAnalysisStationHalo = new AMap.CircleMarker({
+    center: marker.getCenter(),
+    radius: style.radius + 7,
+    fillColor: color,
+    fillOpacity: 0.16,
+    strokeColor: color,
+    strokeOpacity: 0.65,
+    strokeWeight: 2,
+    zIndex: 170,
+    bubble: true
+  })
+  activeAnalysisStationHalo.setMap(map)
+}
+
+function focusAnalysisStation(station) {
+  highlightAnalysisStation(station)
+  const marker = analysisStationMarkerMap.get(Number(station.stationId))
+  if (!marker || !map) return
+  const pos = marker.getCenter()
+  map.setZoomAndCenter(Math.max(map.getZoom(), 15), pos)
+  selectedStation.value = station
+  loadHourly(station.stationId)
+}
+
+function sectionBottleneckStyle(score, active = false) {
+  const baseWeight = !score || score < 1.0 ? 4 : score < 1.5 ? 6 : 8
+  return {
+    strokeWeight: active ? baseWeight + 5 : baseWeight,
+    strokeOpacity: active ? 1 : (!score || score < 1.0 ? 0.56 : 0.86),
+    zIndex: active ? 260 : (!score || score < 1.0 ? 108 : 118)
+  }
+}
+
+function applySectionStyle(poly, section, active = false) {
+  const color = anomalyColor(section.anomalyScore)
+  const style = sectionBottleneckStyle(section.anomalyScore, active)
+  poly.setOptions({
+    strokeColor: color,
+    strokeWeight: style.strokeWeight,
+    strokeOpacity: style.strokeOpacity,
+    zIndex: style.zIndex,
+    strokeStyle: 'solid'
+  })
+}
+
+function resetAnalysisSectionHighlight() {
+  if (!activeAnalysisSection) return
+  const section = activeAnalysisSection.getExtData()
+  applySectionStyle(activeAnalysisSection, section, false)
+  activeAnalysisSection = null
+}
+
+function highlightAnalysisSection(section) {
+  resetAnalysisSectionHighlight()
+  const poly = analysisSectionMap.get(String(section.sectionId))
+  if (!poly) return
+  activeAnalysisSection = poly
+  applySectionStyle(poly, section, true)
+}
+
+function focusAnalysisSection(section) {
+  highlightAnalysisSection(section)
+  const poly = analysisSectionMap.get(String(section.sectionId))
+  if (!poly || !map) return
+  const path = poly.getPath()
+  if (!path?.length) return
+  const mid = path[Math.floor(path.length / 2)]
+  map.setZoomAndCenter(Math.max(map.getZoom(), 14), mid)
+}
+
 function clearAnalysis() {
   analysisMarkers.forEach(m => m.setMap(null))
   analysisSections.forEach(p => p.setMap(null))
+  analysisStationLabels.forEach(t => t.setMap(null))
+  if (activeAnalysisStationHalo) activeAnalysisStationHalo.setMap(null)
   analysisMarkers.length = 0
   analysisSections.length = 0
+  analysisStationLabels.length = 0
+  analysisStationMarkerMap.clear()
+  analysisSectionMap.clear()
+  activeAnalysisStationMarker = null
+  activeAnalysisStationHalo = null
+  activeAnalysisSection = null
   analysisData.value = null
   showAnalysis.value = false
 }
@@ -1311,39 +1583,79 @@ async function runAnalysis(routeId) {
   analysisData.value = res.data
 
   // 站点颜色 Marker
+  let stationIndex = 0
   for (const s of res.data.stations) {
     if (!s.lng || !s.lat) continue
+    if (s.avgDuration > 0) stationIndex += 1
     const color = anomalyColor(s.anomalyScore)
+    const style = stationBottleneckStyle(s.anomalyScore)
+    const center = wgs84ToGcj02(s.lng, s.lat)
     const m = new AMap.CircleMarker({
-      center: wgs84ToGcj02(s.lng, s.lat),
-      radius: 6,
-      fillColor: color, fillOpacity: 0.9,
-      strokeColor: '#fff', strokeWeight: 1.5,
-      zIndex: 120,
+      center,
+      radius: style.radius,
+      fillColor: color,
+      fillOpacity: style.fillOpacity,
+      strokeColor: '#ffffff',
+      strokeOpacity: 0.9,
+      strokeWeight: style.strokeWeight,
+      zIndex: style.zIndex,
+      cursor: 'pointer',
       extData: s
     })
-    m.on('click', () => {
-      selectedStation.value = s
-      loadHourly(s.stationId)
-    })
+    m.on('click', () => focusAnalysisStation(s))
     m.setMap(map)
     analysisMarkers.push(m)
+    analysisStationMarkerMap.set(Number(s.stationId), m)
+
+    if (s.avgDuration > 0) {
+      const label = new AMap.Text({
+        text: String(stationIndex),
+        position: center,
+        offset: new AMap.Pixel(7, -17),
+        zIndex: 190,
+        cursor: 'pointer',
+        style: {
+          padding: '1px 4px',
+          borderRadius: '8px',
+          border: '1px solid rgba(37,99,235,0.28)',
+          background: 'rgba(255,255,255,0.92)',
+          color: '#1d4ed8',
+          fontSize: '10px',
+          fontWeight: '700',
+          lineHeight: '14px',
+          boxShadow: '0 1px 4px rgba(15,23,42,0.18)'
+        }
+      })
+      label.on('click', () => focusAnalysisStation(s))
+      label.setMap(map)
+      analysisStationLabels.push(label)
+    }
   }
 
   // 路段颜色 Polyline
   for (const sec of res.data.sections) {
     if (!sec.path || sec.path.length < 2) continue
     const color = anomalyColor(sec.anomalyScore)
+    const style = sectionBottleneckStyle(sec.anomalyScore, false)
     const pts = sec.path.map(p => { const [lng, lat] = wgs84ToGcj02(p[0], p[1]); return new AMap.LngLat(lng, lat) })
     const poly = new AMap.Polyline({
       path: pts,
       strokeColor: color,
-      strokeWeight: 5,
-      strokeOpacity: 0.85,
-      zIndex: 110
+      strokeWeight: style.strokeWeight,
+      strokeOpacity: style.strokeOpacity,
+      zIndex: style.zIndex,
+      cursor: 'pointer',
+      extData: sec
+    })
+    poly.on('mouseover', () => highlightAnalysisSection(sec))
+    poly.on('mouseout', resetAnalysisSectionHighlight)
+    poly.on('click', () => {
+      analysisTab.value = 'section'
+      focusAnalysisSection(sec)
     })
     poly.setMap(map)
     analysisSections.push(poly)
+    analysisSectionMap.set(String(sec.sectionId), poly)
   }
 
   showAnalysis.value = true
@@ -1353,9 +1665,13 @@ async function runAnalysis(routeId) {
 async function drawRoute(route) {
   currentRouteId.value = route.routeId
   clearRoutes()
-  await buildPolyline(route, '#2563eb', true)
-  map.setCenter([selectedStation.value.lng, selectedStation.value.lat])
-  runAnalysis(route.routeId)  // 同步触发，不 await，不阻塞路线绘制
+  muteClusterMarkers()
+  await drawRouteStations(route, '#2563eb')
+  if (selectedStation.value?.lng && selectedStation.value?.lat) {
+    map.setCenter([selectedStation.value.lng, selectedStation.value.lat])
+  }
+  await runAnalysis(route.routeId)
+  fitCurrentRouteView()
 }
 
 function closePanel() {
@@ -1398,9 +1714,9 @@ async function toggleTestMode() {
 
 onMounted(async () => {
   await initMap()
+  // 默认只展示网络图，其他分析图表按需打开
   await nextTick()
-  // 默认加载站点停留分析卡片
-  await Promise.all([loadRanking(), loadParking(), loadScatter()])
+  await loadGraph()
 })
 onUnmounted(() => map && map.destroy())
 
@@ -1511,6 +1827,13 @@ const vDraggable = {
   box-shadow: 0 4px 16px rgba(0,0,0,0.12);
   display: flex; flex-direction: column; z-index: 100;
 }
+.ranking-card .panel-header {
+  justify-content: space-between;
+}
+.ranking-card .panel-header > div:first-child {
+  flex: 1;
+  min-width: 0;
+}
 .rank-chart { min-height: 100px; padding: 8px; }
 .topn-select {
   margin-left: 6px; padding: 1px 6px;
@@ -1541,8 +1864,12 @@ const vDraggable = {
 .transfer-card   { left: 1440px; width: 340px; }
 .cluster-stat-card { left: 1796px; width: 340px; }
 .cluster-stat-scroll { max-height: 420px; overflow-y: auto; }
-.graph-card      { bottom: 16px; left: 688px; width: 620px; }
-.graph-card .rank-chart { height: 540px !important; }
+.graph-card {
+  bottom: 18px;
+  left: 16px;
+  width: clamp(500px, 38vw, 600px);
+}
+.graph-card .rank-chart { height: 400px !important; }
 .scatter-tag {
   display: inline-block; padding: 1px 7px; border-radius: 10px;
   font-size: 11px; margin-right: 6px; margin-top: 4px;
@@ -1558,7 +1885,23 @@ const vDraggable = {
 .legend-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
 .analysis-list { list-style: none; padding: 0; margin: 0; }
 .analysis-item { display: flex; align-items: center; gap: 6px; padding: 4px 0; border-bottom: 1px solid #f3f4f6; font-size: 12px; }
+.analysis-item.clickable {
+  cursor: pointer;
+  border-radius: 5px;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+.analysis-item.clickable:hover {
+  background: #f8fafc;
+}
 .anomaly-bar { width: 4px; height: 24px; border-radius: 2px; flex-shrink: 0; }
+.analysis-index {
+  width: 18px;
+  flex-shrink: 0;
+  text-align: right;
+  font-size: 11px;
+  color: #9ca3af;
+}
 .analysis-name { flex: 1; color: #111827; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .analysis-val { color: #6b7280; flex-shrink: 0; }
 .hourly-title { font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 6px; }
@@ -1643,6 +1986,12 @@ const vDraggable = {
 }
 .sec-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 /* 线路列表 */
+.route-section-hint {
+  margin: -2px 0 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #6b7280;
+}
 .route-list { list-style: none; max-height: 180px; overflow-y: auto; margin: 0; padding: 0; }
 .route-list li {
   display: flex; justify-content: space-between; align-items: center;
@@ -1653,6 +2002,17 @@ const vDraggable = {
 .route-list li.active { background: #eff6ff; }
 .route-name { font-size: 13px; color: #111827; }
 .route-list li.active .route-name { color: #2563eb; font-weight: 600; }
+.route-action {
+  margin-left: 10px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: #9ca3af;
+}
+.route-list li:hover .route-action { color: #2563eb; }
+.route-list li.active .route-action {
+  color: #2563eb;
+  font-weight: 600;
+}
 .direction { font-size: 11px; color: #9ca3af; }
 
 .loading {
