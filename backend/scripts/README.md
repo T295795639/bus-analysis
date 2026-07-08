@@ -1,59 +1,63 @@
-# 数据库修复脚本
+# Database Repair Scripts
 
-这些脚本用于把本地已经验证过的线路 section / section_driving 修复逻辑同步到另一台机器的 `bus_analysis` 数据库。
+These scripts are used to reproduce local database fixes on another machine.
 
-## 脚本说明
+## Scripts
 
 - `preview_repair_234_original.py`
-  - 只预览 234 路修复结果，不修改数据库。
+  - Preview the 234 route section repair.
+  - Does not modify the database.
 
 - `apply_repair_234_original.py`
-  - 只修复 234 路相关的 `section`、`section_driving`、`section_driving_summary` 数据。
+  - Repairs only the 234 route data.
+  - Updates `section`, `section_driving`, and `section_driving_summary`.
 
 - `apply_repair_all_original.py`
-  - 全量同步修复所有可匹配线路。
-  - 以 `route_station` 的真实站点顺序为准，重建对应线路的 `section`。
-  - 同步迁移/重建对应的 `section_driving` 和 `section_driving_summary`。
-  - 会生成 `repair_all_report/repair_all_report.csv`，记录哪些线路修改、跳过或无需修复。
+  - Repairs all routes that can be safely matched.
+  - Rebuilds route sections using `route_station` as the authoritative station order.
+  - Updates `section`, `section_driving`, and `section_driving_summary`.
+  - Writes a report to `repair_all_report/repair_all_report.csv`.
 
-## 执行前确认
+- `create_car_table.py`
+  - Builds derived vehicle tables from existing operation records.
+  - Creates `car` from distinct `section_driving.car_id` and `station_parking.car_id`.
+  - Creates `car_route` from `section_driving.car_id` joined with `section.route_number`.
+  - Updates `car.route_count`, `car.primary_route_number`, and `car.primary_route_name`.
 
-先确认另一台机器的数据库已经具备这些字段：
+## Before Running
+
+Make sure the target database has these fields/tables:
 
 - `section.end_station_id`
 - `section.route_number`
 - `section_driving.duration_seconds`
 - `section_driving_summary`
+- `station_parking.duration_seconds`
 
-执行前建议先备份：
+Back up important tables first:
 
 ```powershell
 mysqldump -uroot -p bus_analysis section > section.sql
 mysqldump -uroot -p bus_analysis section_driving > section_driving.sql
 mysqldump -uroot -p bus_analysis section_driving_summary > section_driving_summary.sql
+mysqldump -uroot -p bus_analysis station_parking > station_parking.sql
 ```
 
-## 执行命令
+## Commands
 
-在 `backend` 目录执行：
+Run from the `backend` directory:
 
 ```powershell
 pip install pymysql
 python scripts\apply_repair_all_original.py
+python scripts\create_car_table.py
 ```
 
-执行完成后查看报告：
+## Verified Local Result
 
-```powershell
-Get-Content ..\repair_all_report\repair_all_report.csv -TotalCount 20
-```
+On the local database:
 
-## 当前已验证结果
-
-在本机数据库执行后的结果：
-
-- 修改线路：159 条
-- 无需修改：9 条
-- 跳过：260 条
-- 修改后的 159 条线路，`section` 站点链已校验与 `route_station` 顺序一致。
+- `car`: 3340 rows
+- `car_route`: 7490 rows
+- The 159 repaired routes have section station chains aligned with `route_station`.
 
