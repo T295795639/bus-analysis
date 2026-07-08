@@ -42,8 +42,7 @@ def concat_paths(paths):
 
 
 def raw_id(section_id):
-    route_no, direction, seq = section_id.split("_")
-    return f"{route_no}_{direction}{int(seq)}"
+    return section_id
 
 
 def norm_id(raw_section_id):

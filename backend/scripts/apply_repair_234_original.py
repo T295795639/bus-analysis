@@ -50,8 +50,7 @@ def parse_path(path):
 
 
 def raw_id(section_id):
-    route_no, direction, seq = section_id.split("_")
-    return f"{route_no}_{direction}{int(seq)}"
+    return section_id
 
 
 def norm_id(raw_section_id):
@@ -132,7 +131,7 @@ def build_section_rows(sections, station_names, specs):
         rows.append(
             dict(
                 section_id=f"234_down_{seq:02d}",
-                raw_section_id=f"234_down{seq}",
+                raw_section_id=f"234_down_{seq:02d}",
                 route_number="234_down",
                 direction="down",
                 section_name=f"{station_names[start]} -> {station_names[end]}",

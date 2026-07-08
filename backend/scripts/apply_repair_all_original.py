@@ -54,8 +54,7 @@ def concat_paths(paths):
 
 
 def raw_id(section_id):
-    route_no, direction, seq = section_id.split("_")
-    return f"{route_no}_{direction}{int(seq)}"
+    return section_id
 
 
 def fetch_all(cur, sql, args=None):
@@ -193,7 +192,7 @@ def build_new_sections(route_number, desired_stations, grouped_sections):
         rows.append(
             {
                 "section_id": f"{route_number}_{idx:02d}",
-                "raw_section_id": f"{route_number}{idx}",
+                "raw_section_id": f"{route_number}_{idx:02d}",
                 "route_number": route_number,
                 "direction": route_number.split("_")[-1],
                 "section_name": f"{names[start['station_id']]} -> {names[end['station_id']]}",
