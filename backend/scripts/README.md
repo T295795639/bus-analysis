@@ -24,6 +24,13 @@ These scripts are used to reproduce local database fixes on another machine.
   - Creates `car_route` from `section_driving.car_id` joined with `section.route_number`.
   - Updates `car.route_count`, `car.primary_route_number`, and `car.primary_route_name`.
 
+- `infer_station_parking_routes.py`
+  - Adds route attribution fields to `station_parking`.
+  - Infers each parking record route from the same car's nearby `section_driving` records.
+  - Strict rule: same car + nearby time + station matches section start/end.
+  - Fallback rule: same car + nearby time + the station belongs to that route.
+  - Updates `station_parking.route_number`, `route_id`, `route_name`, `route_infer_method`, and `route_infer_gap_seconds`.
+
 ## Before Running
 
 Make sure the target database has these fields/tables:
@@ -51,6 +58,7 @@ Run from the `backend` directory:
 pip install pymysql
 python scripts\apply_repair_all_original.py
 python scripts\create_car_table.py
+python scripts\infer_station_parking_routes.py
 ```
 
 ## Verified Local Result
@@ -59,5 +67,5 @@ On the local database:
 
 - `car`: 3340 rows
 - `car_route`: 7490 rows
+- `station_parking` route attribution: 2592172 / 2793403 rows, 92.8%
 - The 159 repaired routes have section station chains aligned with `route_station`.
-
