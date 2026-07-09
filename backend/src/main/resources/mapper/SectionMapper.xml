@@ -35,8 +35,9 @@
         FROM (
             SELECT DISTINCT route_number
             FROM section
-            WHERE start_station_id = #{stationId}
-               OR end_station_id   = #{stationId}
+            WHERE #{stationId} > 10000
+              AND (start_station_id = #{stationId}
+                   OR end_station_id = #{stationId})
         ) rn
         JOIN section s2 ON s2.route_number = rn.route_number
         WHERE s2.path IS NOT NULL AND s2.path != ''
@@ -59,14 +60,14 @@
                 sec.start_station_id AS station_id,
                 CAST(SUBSTRING_INDEX(sec.section_id, '_', -1) AS UNSIGNED) * 2 AS sort_order
             FROM section sec
-            WHERE sec.route_number LIKE CONCAT(#{routeId}, '_%')
+            WHERE sec.route_number LIKE CONCAT(#{routeId}, '!_up') ESCAPE '!'
             UNION ALL
             SELECT
                 sec.route_number,
                 sec.end_station_id AS station_id,
                 CAST(SUBSTRING_INDEX(sec.section_id, '_', -1) AS UNSIGNED) * 2 + 1 AS sort_order
             FROM section sec
-            WHERE sec.route_number LIKE CONCAT(#{routeId}, '_%')
+            WHERE sec.route_number LIKE CONCAT(#{routeId}, '!_up') ESCAPE '!'
         ),
         first_section_station AS (
             SELECT e.route_number, e.station_id
@@ -86,14 +87,7 @@
                 FROM first_section_station fss
                 WHERE fss.station_id = (SELECT station_id FROM first_route_station)
                 UNION ALL
-                SELECT CONCAT(
-                    #{routeId}, '_',
-                    CASE r.is_up_or_down
-                        WHEN '上行' THEN 'up'
-                        WHEN '下行' THEN 'down'
-                        ELSE r.is_up_or_down
-                    END
-                ) AS route_number, 1 AS priority
+                SELECT CONCAT(#{routeId}, '_up') AS route_number, 1 AS priority
                 FROM route r
                 WHERE r.route_id = #{routeId}
             ) candidates
@@ -119,19 +113,15 @@
             LIMIT 1
         ),
         endpoints AS (
-            SELECT
-                sec.route_number,
-                sec.start_station_id AS station_id,
-                CAST(SUBSTRING_INDEX(sec.section_id, '_', -1) AS UNSIGNED) * 2 AS sort_order
+            SELECT sec.route_number, sec.start_station_id AS station_id,
+                   CAST(SUBSTRING_INDEX(sec.section_id, '_', -1) AS UNSIGNED) * 2 AS sort_order
             FROM section sec
-            WHERE sec.route_number LIKE CONCAT(#{routeId}, '_%')
+            WHERE sec.route_number LIKE CONCAT(#{routeId}, '!_up') ESCAPE '!'
             UNION ALL
-            SELECT
-                sec.route_number,
-                sec.end_station_id AS station_id,
-                CAST(SUBSTRING_INDEX(sec.section_id, '_', -1) AS UNSIGNED) * 2 + 1 AS sort_order
+            SELECT sec.route_number, sec.end_station_id AS station_id,
+                   CAST(SUBSTRING_INDEX(sec.section_id, '_', -1) AS UNSIGNED) * 2 + 1 AS sort_order
             FROM section sec
-            WHERE sec.route_number LIKE CONCAT(#{routeId}, '_%')
+            WHERE sec.route_number LIKE CONCAT(#{routeId}, '!_up') ESCAPE '!'
         ),
         first_section_station AS (
             SELECT e.route_number, e.station_id
@@ -151,14 +141,7 @@
                 FROM first_section_station fss
                 WHERE fss.station_id = (SELECT station_id FROM first_route_station)
                 UNION ALL
-                SELECT CONCAT(
-                    #{routeId}, '_',
-                    CASE r.is_up_or_down
-                        WHEN '上行' THEN 'up'
-                        WHEN '下行' THEN 'down'
-                        ELSE r.is_up_or_down
-                    END
-                ) AS route_number, 1 AS priority
+                SELECT CONCAT(#{routeId}, '_up') AS route_number, 1 AS priority
                 FROM route r
                 WHERE r.route_id = #{routeId}
             ) candidates
@@ -166,12 +149,15 @@
             LIMIT 1
         )
         SELECT
+            s.route_number AS routeNumber,
             s.section_id   AS sectionId,
-            CONCAT(COALESCE(ss.station_name, s.start_station_id), ' → ', COALESCE(es.station_name, s.end_station_id)) AS sectionName,
+            s.start_station_id AS startStationId,
+            s.end_station_id AS endStationId,
+            CONCAT(COALESCE(ss.station_name, s.start_station_id), ' -> ', COALESCE(es.station_name, s.end_station_id)) AS sectionName,
             s.path         AS path,
-            COALESCE(sds.avg_duration_seconds, 0) AS avgDuration
+            COALESCE(sds.avg_duration_seconds, 0) AS avgDuration,
+            COALESCE(sds.record_count, 0) AS recordCount
         FROM section s
-        JOIN route r ON r.route_id = #{routeId}
         LEFT JOIN station ss ON ss.station_id = s.start_station_id
         LEFT JOIN station es ON es.station_id = s.end_station_id
         LEFT JOIN section_driving_summary sds ON sds.section_id = s.section_id

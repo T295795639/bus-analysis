@@ -8,6 +8,8 @@ public class StationAnalysisVO {
     private String stationName;
     private Double lng;
     private Double lat;
-    private Double avgDuration;   // 秒
-    private Double anomalyScore;  // 当前值 / 全线均值
+    private Double avgDuration;
+    private Double anomalyScore;
+    private Long parkingCount;
+    private String durationSource;
 }

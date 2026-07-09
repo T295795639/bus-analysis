@@ -14,6 +14,7 @@
             s.cluster_id AS clusterId
         FROM station s
         LEFT JOIN route_station rs ON s.station_id = rs.station_id
+        WHERE s.station_id > 10000
         GROUP BY s.station_id, s.station_name, s.lng, s.lat, s.cluster_id
     </select>
 
@@ -26,6 +27,7 @@
         FROM route r
         INNER JOIN route_station rs ON r.route_id = rs.route_id
         WHERE rs.station_id = #{stationId}
+          AND rs.station_id > 10000
         ORDER BY r.route_name, r.is_up_or_down
     </select>
 
@@ -53,7 +55,7 @@
             ps.parking_count AS parkingCount
         FROM station_parking_summary ps
         INNER JOIN station s ON s.station_id = ps.station_id
-        WHERE s.station_id >= 1000
+        WHERE s.station_id > 10000
         ORDER BY ps.parking_count DESC
         LIMIT #{topN}
     </select>
@@ -70,7 +72,7 @@
             ps.parking_count            AS parkingCount
         FROM station_parking_summary ps
         INNER JOIN station s ON s.station_id = ps.station_id
-        WHERE s.station_id >= 1000
+        WHERE s.station_id > 10000
           AND ps.avg_duration_seconds > 0
     </select>
 
@@ -91,7 +93,7 @@
             3) AS peakRatio
         FROM station_parking sp
         INNER JOIN station s ON sp.station_id = s.station_id
-        WHERE s.station_id >= 1000
+        WHERE s.station_id > 10000
         GROUP BY s.station_id, s.station_name
         HAVING morningCount + eveningCount > 0
         ORDER BY peakRatio DESC
@@ -105,6 +107,7 @@
             COUNT(*) AS count
         FROM station_parking
         WHERE station_id = #{stationId}
+          AND station_id > 10000
         GROUP BY HOUR(start_date_time)
         ORDER BY hour
     </select>
@@ -120,7 +123,7 @@
         FROM station s
         INNER JOIN route_station rs ON s.station_id = rs.station_id
         LEFT JOIN station_parking sp ON s.station_id = sp.station_id
-        WHERE s.station_id >= 1000
+        WHERE s.station_id > 10000
         GROUP BY s.station_id, s.station_name, s.lng, s.lat
         ORDER BY routeCount DESC, parkingCount DESC
         LIMIT #{topN}
@@ -138,7 +141,7 @@
             UNION
             SELECT DISTINCT end_station_id,   route_number FROM section
         ) sec ON sec.sid = s.station_id
-        WHERE s.station_id >= 1000
+        WHERE s.station_id > 10000
         GROUP BY s.station_id, s.station_name, s.lng, s.lat
         ORDER BY parkingCount DESC
     </select>
@@ -153,7 +156,7 @@
         FROM station_parking_summary agg
         INNER JOIN station s ON s.station_id = agg.station_id
         WHERE s.cluster_id IS NOT NULL
-          AND s.station_id >= 1000
+          AND s.station_id > 10000
         GROUP BY s.cluster_id
         ORDER BY avgDurationSeconds DESC
     </select>
@@ -169,7 +172,7 @@
             ps.parking_count        AS parkingCount
         FROM station_parking_summary ps
         INNER JOIN station s ON s.station_id = ps.station_id
-        WHERE s.station_id >= 1000
+        WHERE s.station_id > 10000
           AND ps.avg_duration_seconds > 0
         ORDER BY avgDurationSeconds DESC
         LIMIT #{topN}
@@ -186,19 +189,15 @@
             LIMIT 1
         ),
         direction_endpoints AS (
-            SELECT
-                sec.route_number,
-                sec.start_station_id AS station_id,
-                CAST(SUBSTRING_INDEX(sec.section_id, '_', -1) AS UNSIGNED) * 2 AS sort_order
+            SELECT sec.route_number, sec.start_station_id AS station_id,
+                   CAST(SUBSTRING_INDEX(sec.section_id, '_', -1) AS UNSIGNED) * 2 AS sort_order
             FROM section sec
-            WHERE sec.route_number LIKE CONCAT(#{routeId}, '_%')
+            WHERE sec.route_number LIKE CONCAT(#{routeId}, '!_up') ESCAPE '!'
             UNION ALL
-            SELECT
-                sec.route_number,
-                sec.end_station_id AS station_id,
-                CAST(SUBSTRING_INDEX(sec.section_id, '_', -1) AS UNSIGNED) * 2 + 1 AS sort_order
+            SELECT sec.route_number, sec.end_station_id AS station_id,
+                   CAST(SUBSTRING_INDEX(sec.section_id, '_', -1) AS UNSIGNED) * 2 + 1 AS sort_order
             FROM section sec
-            WHERE sec.route_number LIKE CONCAT(#{routeId}, '_%')
+            WHERE sec.route_number LIKE CONCAT(#{routeId}, '!_up') ESCAPE '!'
         ),
         first_section_station AS (
             SELECT e.route_number, e.station_id
@@ -218,63 +217,128 @@
                 FROM first_section_station fss
                 WHERE fss.station_id = (SELECT station_id FROM first_route_station)
                 UNION ALL
-                SELECT CONCAT(
-                    #{routeId}, '_',
-                    CASE r.is_up_or_down
-                        WHEN '上行' THEN 'up'
-                        WHEN '下行' THEN 'down'
-                        ELSE r.is_up_or_down
-                    END
-                ) AS route_number, 1 AS priority
+                SELECT CONCAT(#{routeId}, '_up') AS route_number, 1 AS priority
                 FROM route r
                 WHERE r.route_id = #{routeId}
             ) candidates
             ORDER BY priority
             LIMIT 1
+        ),
+        route_parking AS (
+            SELECT station_id,
+                   AVG(duration_seconds) AS avg_duration_seconds,
+                   COUNT(*) AS parking_count
+            FROM station_parking
+            WHERE route_number = (SELECT route_number FROM selected_route)
+              AND station_id > 10000
+            GROUP BY station_id
         )
         SELECT
             s.station_id   AS stationId,
             s.station_name AS stationName,
             s.lng,
             s.lat,
-            COALESCE(ps.avg_duration_seconds, 0) AS avgDuration
+            COALESCE(rp.avg_duration_seconds, ps.avg_duration_seconds, 0) AS avgDuration,
+            COALESCE(rp.parking_count, ps.parking_count, 0) AS parkingCount,
+            CASE WHEN rp.parking_count IS NOT NULL THEN 'route'
+                 WHEN ps.parking_count IS NOT NULL THEN 'fallback'
+                 ELSE 'none'
+            END AS durationSource
         FROM (
             SELECT station_id, MIN(sort_order) AS sort_order
             FROM (
-                SELECT
-                    sec.start_station_id AS station_id,
-                    CAST(SUBSTRING_INDEX(sec.section_id, '_', -1) AS UNSIGNED) * 2 AS sort_order
+                SELECT sec.start_station_id AS station_id,
+                       CAST(SUBSTRING_INDEX(sec.section_id, '_', -1) AS UNSIGNED) * 2 AS sort_order
                 FROM section sec
                 WHERE sec.route_number = (SELECT route_number FROM selected_route)
                 UNION ALL
-                SELECT
-                    sec.end_station_id AS station_id,
-                    CAST(SUBSTRING_INDEX(sec.section_id, '_', -1) AS UNSIGNED) * 2 + 1 AS sort_order
+                SELECT sec.end_station_id AS station_id,
+                       CAST(SUBSTRING_INDEX(sec.section_id, '_', -1) AS UNSIGNED) * 2 + 1 AS sort_order
                 FROM section sec
                 WHERE sec.route_number = (SELECT route_number FROM selected_route)
             ) ordered_stations
             WHERE station_id IS NOT NULL
-              AND station_id > 10000
+              AND station_id &gt; 10000
             GROUP BY station_id
         ) seq
         INNER JOIN station s ON s.station_id = seq.station_id
+        LEFT JOIN route_parking rp ON rp.station_id = s.station_id
         LEFT JOIN station_parking_summary ps ON ps.station_id = s.station_id
         ORDER BY seq.sort_order
     </select>
 
     <!-- 路线分析辅助：route_station 中记录的完整真实站点顺序，用于补回 section 骨架缺失的站点 -->
     <select id="selectRouteStationAnalysisByRouteId" resultType="com.nettiexj.bus.dto.StationAnalysisVO">
+        WITH first_route_station AS (
+            SELECT rs.station_id
+            FROM route_station rs
+            WHERE rs.route_id = #{routeId}
+              AND rs.station_id &gt; 10000
+            ORDER BY rs.id
+            LIMIT 1
+        ),
+        direction_endpoints AS (
+            SELECT sec.route_number, sec.start_station_id AS station_id,
+                   CAST(SUBSTRING_INDEX(sec.section_id, '_', -1) AS UNSIGNED) * 2 AS sort_order
+            FROM section sec
+            WHERE sec.route_number LIKE CONCAT(#{routeId}, '!_up') ESCAPE '!'
+            UNION ALL
+            SELECT sec.route_number, sec.end_station_id AS station_id,
+                   CAST(SUBSTRING_INDEX(sec.section_id, '_', -1) AS UNSIGNED) * 2 + 1 AS sort_order
+            FROM section sec
+            WHERE sec.route_number LIKE CONCAT(#{routeId}, '!_up') ESCAPE '!'
+        ),
+        first_section_station AS (
+            SELECT e.route_number, e.station_id
+            FROM direction_endpoints e
+            JOIN (
+                SELECT route_number, MIN(sort_order) AS sort_order
+                FROM direction_endpoints
+                WHERE station_id &gt; 10000
+                GROUP BY route_number
+            ) first_ep ON first_ep.route_number = e.route_number
+                      AND first_ep.sort_order = e.sort_order
+        ),
+        selected_route AS (
+            SELECT route_number
+            FROM (
+                SELECT fss.route_number, 0 AS priority
+                FROM first_section_station fss
+                WHERE fss.station_id = (SELECT station_id FROM first_route_station)
+                UNION ALL
+                SELECT CONCAT(#{routeId}, '_up') AS route_number, 1 AS priority
+                FROM route r
+                WHERE r.route_id = #{routeId}
+            ) candidates
+            ORDER BY priority
+            LIMIT 1
+        ),
+        route_parking AS (
+            SELECT station_id,
+                   AVG(duration_seconds) AS avg_duration_seconds,
+                   COUNT(*) AS parking_count
+            FROM station_parking
+            WHERE route_number = (SELECT route_number FROM selected_route)
+              AND station_id > 10000
+            GROUP BY station_id
+        )
         SELECT
             s.station_id   AS stationId,
             s.station_name AS stationName,
             s.lng,
             s.lat,
-            COALESCE(ps.avg_duration_seconds, 0) AS avgDuration
+            COALESCE(rp.avg_duration_seconds, ps.avg_duration_seconds, 0) AS avgDuration,
+            COALESCE(rp.parking_count, ps.parking_count, 0) AS parkingCount,
+            CASE WHEN rp.parking_count IS NOT NULL THEN 'route'
+                 WHEN ps.parking_count IS NOT NULL THEN 'fallback'
+                 ELSE 'none'
+            END AS durationSource
         FROM route_station rs
         INNER JOIN station s ON s.station_id = rs.station_id
+        LEFT JOIN route_parking rp ON rp.station_id = s.station_id
         LEFT JOIN station_parking_summary ps ON ps.station_id = s.station_id
         WHERE rs.route_id = #{routeId}
-          AND s.station_id > 10000
+          AND s.station_id &gt; 10000
         ORDER BY rs.id
     </select>
 

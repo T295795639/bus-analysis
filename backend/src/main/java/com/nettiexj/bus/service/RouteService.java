@@ -43,6 +43,7 @@ public class RouteService {
         // 1. 站点
         List<StationAnalysisVO> stations = stationMapper.selectStationAnalysisByRouteId(routeId);
         stations = mergeMissingRouteStations(stations, stationMapper.selectRouteStationAnalysisByRouteId(routeId));
+        normalizeStationDurations(stations);
         double stationAvg = stations.stream()
                 .mapToDouble(s -> s.getAvgDuration() == null ? 0 : s.getAvgDuration())
                 .filter(v -> v > 0).average().orElse(1);
@@ -53,16 +54,16 @@ public class RouteService {
 
         // 2. 路段（path 为 JSON 字符串，转换后填入 SectionAnalysisVO）
         List<SectionAnalysisRawVO> rawSections = sectionMapper.selectSectionAnalysisByRouteId(routeId);
-        double sectionAvg = rawSections.stream()
-                .mapToDouble(s -> s.getAvgDuration() == null ? 0 : s.getAvgDuration())
-                .filter(v -> v > 0).average().orElse(1);
         List<SectionAnalysisVO> sections = rawSections.stream().map(raw -> {
             SectionAnalysisVO s = new SectionAnalysisVO();
+            s.setRouteNumber(raw.getRouteNumber());
             s.setSectionId(raw.getSectionId());
             s.setSectionName(raw.getSectionName());
+            s.setStartStationId(raw.getStartStationId());
+            s.setEndStationId(raw.getEndStationId());
+            s.setRecordCount(raw.getRecordCount() == null ? 0L : raw.getRecordCount());
             double d = raw.getAvgDuration() == null ? 0 : raw.getAvgDuration();
             s.setAvgDuration(d);
-            s.setAnomalyScore(sectionAvg > 0 ? d / sectionAvg : 0);
             try {
                 if (raw.getPath() != null && !raw.getPath().isBlank()) {
                     s.setPath(objectMapper.readValue(raw.getPath(),
@@ -75,6 +76,14 @@ public class RouteService {
             }
             return s;
         }).toList();
+        normalizeSectionDurations(sections);
+        double sectionAvg = sections.stream()
+                .mapToDouble(s -> s.getAvgDuration() == null ? 0 : s.getAvgDuration())
+                .filter(v -> v > 0).average().orElse(1);
+        sections.forEach(s -> {
+            double d = s.getAvgDuration() == null ? 0 : s.getAvgDuration();
+            s.setAnomalyScore(sectionAvg > 0 ? d / sectionAvg : 0);
+        });
 
         RouteAnalysisVO vo = new RouteAnalysisVO();
         vo.setStations(stations);
@@ -82,6 +91,85 @@ public class RouteService {
         vo.setStationAvg(stationAvg);
         vo.setSectionAvg(sectionAvg);
         return vo;
+    }
+
+    private void normalizeStationDurations(List<StationAnalysisVO> stations) {
+        double[] original = stations.stream()
+                .mapToDouble(s -> positiveOrZero(s.getAvgDuration()))
+                .toArray();
+        double baseline = medianPositive(original);
+        for (int i = 0; i < stations.size(); i++) {
+            if (original[i] <= 0) {
+                stations.get(i).setAvgDuration(estimateDuration(original, i, baseline));
+            }
+        }
+        if (!stations.isEmpty() && original.length > 0 && original[0] > baseline * 3) {
+            stations.get(0).setAvgDuration(estimateDuration(original, 0, baseline));
+        }
+    }
+
+    private void normalizeSectionDurations(List<SectionAnalysisVO> sections) {
+        double[] original = sections.stream()
+                .mapToDouble(s -> positiveOrZero(s.getAvgDuration()))
+                .toArray();
+        double baseline = medianPositive(original);
+        for (int i = 0; i < sections.size(); i++) {
+            if (original[i] <= 0) {
+                sections.get(i).setAvgDuration(estimateDuration(original, i, baseline));
+            }
+        }
+        if (!sections.isEmpty() && original.length > 0 && original[0] > baseline * 3) {
+            sections.get(0).setAvgDuration(estimateDuration(original, 0, baseline));
+        }
+    }
+
+    private double positiveOrZero(Double value) {
+        return value == null || value <= 0 ? 0 : value;
+    }
+
+    private double medianPositive(double[] values) {
+        List<Double> positives = new ArrayList<>();
+        for (double value : values) {
+            if (value > 0) {
+                positives.add(value);
+            }
+        }
+        if (positives.isEmpty()) {
+            return 60;
+        }
+        positives.sort(Double::compareTo);
+        int mid = positives.size() / 2;
+        if (positives.size() % 2 == 1) {
+            return positives.get(mid);
+        }
+        return (positives.get(mid - 1) + positives.get(mid)) / 2.0;
+    }
+
+    private double estimateDuration(double[] original, int index, double fallback) {
+        Double prev = null;
+        Double next = null;
+        for (int i = index - 1; i >= 0; i--) {
+            if (original[i] > 0) {
+                prev = original[i];
+                break;
+            }
+        }
+        for (int i = index + 1; i < original.length; i++) {
+            if (original[i] > 0) {
+                next = original[i];
+                break;
+            }
+        }
+        if (prev != null && next != null) {
+            return (prev + next) / 2.0;
+        }
+        if (prev != null) {
+            return prev;
+        }
+        if (next != null) {
+            return next;
+        }
+        return fallback;
     }
 
     /**

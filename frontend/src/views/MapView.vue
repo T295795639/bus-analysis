@@ -229,7 +229,7 @@
             <span class="legend-dot" style="background:#ef4444;margin-left:8px"></span>异常
           </div>
           <ul v-if="analysisTab==='station'" class="analysis-list">
-            <li v-for="(s, idx) in analysisData.stations.filter(s=>s.avgDuration>0)"
+            <li v-for="(s, idx) in analysisData.stations.filter(s=>s.stationId>10000 && s.avgDuration>0)"
                 :key="s.stationId"
                 class="analysis-item clickable"
                 @mouseenter="highlightAnalysisStation(s)"
@@ -242,16 +242,17 @@
             </li>
           </ul>
           <ul v-if="analysisTab==='section'" class="analysis-list">
-            <li v-for="(s, idx) in [...analysisData.sections].filter(s=>s.avgDuration>0).sort((a,b)=>b.anomalyScore-a.anomalyScore).slice(0,10)"
+            <li v-for="(s, idx) in orderedAnalysisSections(analysisData.sections)"
                 :key="s.sectionId"
-                class="analysis-item clickable"
+                :class="['analysis-item', 'clickable', { active: selectedAnalysisSectionId === String(s.sectionId) }]"
                 @mouseenter="highlightAnalysisSection(s)"
                 @mouseleave="resetAnalysisSectionHighlight"
                 @click="focusAnalysisSection(s)">
               <span class="anomaly-bar" :style="{background: anomalyColor(s.anomalyScore)}"></span>
               <span class="analysis-index">{{ idx + 1 }}</span>
               <span class="analysis-name">{{ s.sectionName }}</span>
-              <span class="analysis-val">{{ (s.avgDuration/60).toFixed(1) }} 分钟</span>
+              <span class="analysis-source section">{{ s.recordCount || 0 }}条</span>
+              <span class="analysis-val">{{ s.avgDuration > 0 ? (s.avgDuration/60).toFixed(1) + ' 分钟' : '无数据' }}</span>
             </li>
           </ul>
         </div>
@@ -1272,7 +1273,7 @@ async function onStationClick(station) {
   routeRes.data.forEach(r => { nameMap[String(r.routeId)] = r.routeName })
 
   // 从 section route_number 派生路线列表，按路线前缀去重（不区分上下行）
-  const sections = sectionRes.data
+  const sections = sectionRes.data.filter(sec => sec.routeNumber?.endsWith('_up'))
   const seen = new Set()
   routes.value = []
   sections.forEach(sec => {
@@ -1286,7 +1287,7 @@ async function onStationClick(station) {
   })
 
   drawAllRoutes(sections)
-  if (station.stationId >= 1000) loadHourly(station.stationId)
+  if (station.stationId > 10000) loadHourly(station.stationId)
 }
 
 // 多条线路颜色池
@@ -1406,6 +1407,7 @@ function drawAllRoutes(sections) {
   clearRoutes()
   const groups = {}
   sections.forEach(sec => {
+    if (!sec.routeNumber?.endsWith('_up')) return
     if (!groups[sec.routeNumber]) groups[sec.routeNumber] = []
     groups[sec.routeNumber].push(sec)
   })
@@ -1433,15 +1435,51 @@ const analysisData = ref(null)        // RouteAnalysisVO
 const analysisMarkers = []            // 站点颜色 Marker
 const analysisSections = []           // 路段颜色 Polyline
 const analysisStationLabels = []      // 地图站点序号
+const analysisSectionLabels = []
 const analysisStationMarkerMap = new Map()
 const analysisSectionMap = new Map()
 let activeAnalysisStationMarker = null
 let activeAnalysisStationHalo = null
 let activeAnalysisSection = null
+const selectedAnalysisSectionId = ref(null)
 const showAnalysis = ref(false)
 const analysisTab = ref('station')    // 'station' | 'section'
 
+function orderedAnalysisSections(sections = []) {
+  return sections.filter(s => s.path?.length > 1)
+}
+
+function polylineDistanceMidpoint(points) {
+  if (!points?.length) return null
+  if (points.length === 1) return points[0]
+
+  let total = 0
+  const segments = []
+  for (let i = 1; i < points.length; i += 1) {
+    const a = points[i - 1]
+    const b = points[i]
+    const d = a.distance(b)
+    segments.push({ a, b, d })
+    total += d
+  }
+  if (total <= 0) return points[Math.floor(points.length / 2)]
+
+  let walked = 0
+  const target = total / 2
+  for (const seg of segments) {
+    if (walked + seg.d >= target) {
+      const ratio = seg.d === 0 ? 0 : (target - walked) / seg.d
+      const lng = seg.a.lng + (seg.b.lng - seg.a.lng) * ratio
+      const lat = seg.a.lat + (seg.b.lat - seg.a.lat) * ratio
+      return new AMap.LngLat(lng, lat)
+    }
+    walked += seg.d
+  }
+  return points[points.length - 1]
+}
+
 function anomalyColor(score) {
+  if (score === null || score === undefined) return '#94a3b8'
   if (!score || score < 1.0) return '#22c55e'
   if (score < 1.5) return '#f59e0b'
   return '#ef4444'
@@ -1449,17 +1487,38 @@ function anomalyColor(score) {
 
 function stationBottleneckStyle(score) {
   if (!score || score < 1.0) {
-    return { radius: 4.5, fillOpacity: 0.78, strokeWeight: 1, zIndex: 115 }
+    return { radius: 9, fillOpacity: 0.92, strokeWeight: 2, zIndex: 190 }
   }
   if (score < 1.5) {
-    return { radius: 6, fillOpacity: 0.88, strokeWeight: 1.4, zIndex: 120 }
+    return { radius: 10, fillOpacity: 0.94, strokeWeight: 2, zIndex: 195 }
   }
-  return { radius: 7, fillOpacity: 0.94, strokeWeight: 1.8, zIndex: 125 }
+  return { radius: 11, fillOpacity: 0.96, strokeWeight: 2, zIndex: 200 }
 }
 
 function applyStationMarkerStyle(marker, station, active = false) {
   const color = anomalyColor(station.anomalyScore)
   const style = stationBottleneckStyle(station.anomalyScore)
+  const baseSize = Math.max(style.radius * 2, station._analysisIndex >= 100 ? 24 : 18)
+  const labelSize = active ? baseSize + 6 : baseSize
+  if (marker.setStyle) {
+    marker.setStyle({
+      width: `${labelSize}px`,
+      height: `${labelSize}px`,
+      padding: '0',
+      borderRadius: '50%',
+      border: `${active ? 3 : style.strokeWeight}px solid #ffffff`,
+      background: color,
+      color: '#ffffff',
+      fontSize: station._analysisIndex >= 100 ? '9px' : '10px',
+      fontWeight: '800',
+      lineHeight: `${labelSize - (active ? 6 : style.strokeWeight * 2)}px`,
+      textAlign: 'center',
+      boxShadow: active ? '0 3px 10px rgba(15,23,42,0.32)' : '0 1px 5px rgba(15,23,42,0.24)'
+    })
+    if (marker.setOffset) marker.setOffset(new AMap.Pixel(-labelSize / 2, -labelSize / 2))
+    if (marker.setzIndex) marker.setzIndex(active ? 230 : style.zIndex)
+    return
+  }
   marker.setOptions({
     radius: active ? style.radius + 3 : style.radius,
     fillColor: color,
@@ -1467,7 +1526,7 @@ function applyStationMarkerStyle(marker, station, active = false) {
     strokeColor: '#ffffff',
     strokeOpacity: active ? 1 : 0.9,
     strokeWeight: active ? 3 : style.strokeWeight,
-    zIndex: active ? 180 : style.zIndex
+    zIndex: active ? 230 : style.zIndex
   })
 }
 
@@ -1491,7 +1550,7 @@ function highlightAnalysisStation(station) {
   const color = anomalyColor(station.anomalyScore)
   const style = stationBottleneckStyle(station.anomalyScore)
   activeAnalysisStationHalo = new AMap.CircleMarker({
-    center: marker.getCenter(),
+    center: marker.getCenter ? marker.getCenter() : marker.getPosition(),
     radius: style.radius + 7,
     fillColor: color,
     fillOpacity: 0.16,
@@ -1505,27 +1564,32 @@ function highlightAnalysisStation(station) {
 }
 
 function focusAnalysisStation(station) {
+  if (Number(station.stationId) <= 10000) return
   highlightAnalysisStation(station)
   const marker = analysisStationMarkerMap.get(Number(station.stationId))
   if (!marker || !map) return
-  const pos = marker.getCenter()
+  const pos = marker.getCenter ? marker.getCenter() : marker.getPosition()
   map.setZoomAndCenter(Math.max(map.getZoom(), 15), pos)
   selectedStation.value = station
   loadHourly(station.stationId)
 }
 
-function sectionBottleneckStyle(score, active = false) {
-  const baseWeight = !score || score < 1.0 ? 4 : score < 1.5 ? 6 : 8
+function sectionBottleneckStyle(score, state = 'normal') {
+  const noData = score === null || score === undefined
+  const baseWeight = noData ? 3 : !score || score < 1.0 ? 4 : score < 1.5 ? 6 : 8
+  const selected = state === 'selected'
+  const hover = state === 'hover'
   return {
-    strokeWeight: active ? baseWeight + 5 : baseWeight,
-    strokeOpacity: active ? 1 : (!score || score < 1.0 ? 0.56 : 0.86),
-    zIndex: active ? 260 : (!score || score < 1.0 ? 108 : 118)
+    strokeWeight: selected ? baseWeight + 7 : hover ? baseWeight + 3 : baseWeight,
+    strokeOpacity: selected || hover ? 1 : (noData ? 0.36 : !score || score < 1.0 ? 0.56 : 0.86),
+    zIndex: selected ? 320 : hover ? 260 : (!score || score < 1.0 ? 108 : 118)
   }
 }
 
-function applySectionStyle(poly, section, active = false) {
-  const color = anomalyColor(section.anomalyScore)
-  const style = sectionBottleneckStyle(section.anomalyScore, active)
+function applySectionStyle(poly, section, state = 'normal') {
+  const score = section.avgDuration > 0 ? section.anomalyScore : null
+  const color = anomalyColor(score)
+  const style = sectionBottleneckStyle(score, state)
   poly.setOptions({
     strokeColor: color,
     strokeWeight: style.strokeWeight,
@@ -1538,7 +1602,11 @@ function applySectionStyle(poly, section, active = false) {
 function resetAnalysisSectionHighlight() {
   if (!activeAnalysisSection) return
   const section = activeAnalysisSection.getExtData()
-  applySectionStyle(activeAnalysisSection, section, false)
+  applySectionStyle(
+    activeAnalysisSection,
+    section,
+    selectedAnalysisSectionId.value === String(section.sectionId) ? 'selected' : 'normal'
+  )
   activeAnalysisSection = null
 }
 
@@ -1547,16 +1615,25 @@ function highlightAnalysisSection(section) {
   const poly = analysisSectionMap.get(String(section.sectionId))
   if (!poly) return
   activeAnalysisSection = poly
-  applySectionStyle(poly, section, true)
+  applySectionStyle(
+    poly,
+    section,
+    selectedAnalysisSectionId.value === String(section.sectionId) ? 'selected' : 'hover'
+  )
 }
 
 function focusAnalysisSection(section) {
-  highlightAnalysisSection(section)
+  selectedAnalysisSectionId.value = String(section.sectionId)
+  analysisSections.forEach(poly => {
+    const sec = poly.getExtData()
+    applySectionStyle(poly, sec, String(sec.sectionId) === selectedAnalysisSectionId.value ? 'selected' : 'normal')
+  })
   const poly = analysisSectionMap.get(String(section.sectionId))
   if (!poly || !map) return
   const path = poly.getPath()
   if (!path?.length) return
-  const mid = path[Math.floor(path.length / 2)]
+  const mid = polylineDistanceMidpoint(path)
+  if (!mid) return
   map.setZoomAndCenter(Math.max(map.getZoom(), 14), mid)
 }
 
@@ -1564,15 +1641,18 @@ function clearAnalysis() {
   analysisMarkers.forEach(m => m.setMap(null))
   analysisSections.forEach(p => p.setMap(null))
   analysisStationLabels.forEach(t => t.setMap(null))
+  analysisSectionLabels.forEach(t => t.setMap(null))
   if (activeAnalysisStationHalo) activeAnalysisStationHalo.setMap(null)
   analysisMarkers.length = 0
   analysisSections.length = 0
   analysisStationLabels.length = 0
+  analysisSectionLabels.length = 0
   analysisStationMarkerMap.clear()
   analysisSectionMap.clear()
   activeAnalysisStationMarker = null
   activeAnalysisStationHalo = null
   activeAnalysisSection = null
+  selectedAnalysisSectionId.value = null
   analysisData.value = null
   showAnalysis.value = false
 }
@@ -1585,58 +1665,52 @@ async function runAnalysis(routeId) {
   // 站点颜色 Marker
   let stationIndex = 0
   for (const s of res.data.stations) {
+    if (Number(s.stationId) <= 10000) continue
     if (!s.lng || !s.lat) continue
-    if (s.avgDuration > 0) stationIndex += 1
+    if (!(s.avgDuration > 0)) continue
+    stationIndex += 1
+    s._analysisIndex = stationIndex
     const color = anomalyColor(s.anomalyScore)
     const style = stationBottleneckStyle(s.anomalyScore)
     const center = wgs84ToGcj02(s.lng, s.lat)
-    const m = new AMap.CircleMarker({
-      center,
-      radius: style.radius,
-      fillColor: color,
-      fillOpacity: style.fillOpacity,
-      strokeColor: '#ffffff',
-      strokeOpacity: 0.9,
-      strokeWeight: style.strokeWeight,
+    const labelSize = Math.max(style.radius * 2, stationIndex >= 100 ? 24 : 18)
+    const m = new AMap.Text({
+      text: String(stationIndex),
+      position: center,
+      offset: new AMap.Pixel(-labelSize / 2, -labelSize / 2),
       zIndex: style.zIndex,
       cursor: 'pointer',
-      extData: s
+      extData: s,
+      style: {
+        width: `${labelSize}px`,
+        height: `${labelSize}px`,
+        padding: '0',
+        borderRadius: '50%',
+        border: `${style.strokeWeight}px solid #ffffff`,
+        background: color,
+        color: '#ffffff',
+        fontSize: stationIndex >= 100 ? '9px' : '10px',
+        fontWeight: '800',
+        lineHeight: `${labelSize - style.strokeWeight * 2}px`,
+        textAlign: 'center',
+        boxShadow: '0 1px 5px rgba(15,23,42,0.24)'
+      }
     })
     m.on('click', () => focusAnalysisStation(s))
     m.setMap(map)
     analysisMarkers.push(m)
     analysisStationMarkerMap.set(Number(s.stationId), m)
-
-    if (s.avgDuration > 0) {
-      const label = new AMap.Text({
-        text: String(stationIndex),
-        position: center,
-        offset: new AMap.Pixel(7, -17),
-        zIndex: 190,
-        cursor: 'pointer',
-        style: {
-          padding: '1px 4px',
-          borderRadius: '8px',
-          border: '1px solid rgba(37,99,235,0.28)',
-          background: 'rgba(255,255,255,0.92)',
-          color: '#1d4ed8',
-          fontSize: '10px',
-          fontWeight: '700',
-          lineHeight: '14px',
-          boxShadow: '0 1px 4px rgba(15,23,42,0.18)'
-        }
-      })
-      label.on('click', () => focusAnalysisStation(s))
-      label.setMap(map)
-      analysisStationLabels.push(label)
-    }
   }
 
   // 路段颜色 Polyline
+  const topSectionRankMap = new Map(
+    orderedAnalysisSections(res.data.sections).map((sec, idx) => [String(sec.sectionId), idx + 1])
+  )
   for (const sec of res.data.sections) {
     if (!sec.path || sec.path.length < 2) continue
-    const color = anomalyColor(sec.anomalyScore)
-    const style = sectionBottleneckStyle(sec.anomalyScore, false)
+    const score = sec.avgDuration > 0 ? sec.anomalyScore : null
+    const color = anomalyColor(score)
+    const style = sectionBottleneckStyle(score, 'normal')
     const pts = sec.path.map(p => { const [lng, lat] = wgs84ToGcj02(p[0], p[1]); return new AMap.LngLat(lng, lat) })
     const poly = new AMap.Polyline({
       path: pts,
@@ -1656,6 +1730,42 @@ async function runAnalysis(routeId) {
     poly.setMap(map)
     analysisSections.push(poly)
     analysisSectionMap.set(String(sec.sectionId), poly)
+
+    const rank = topSectionRankMap.get(String(sec.sectionId))
+    if (rank) {
+      const mid = polylineDistanceMidpoint(pts)
+      if (!mid) continue
+      const label = new AMap.Text({
+        text: `段${rank}`,
+        position: mid,
+        offset: new AMap.Pixel(-14, -9),
+        zIndex: 280,
+        cursor: 'pointer',
+        extData: sec,
+        style: {
+          minWidth: '28px',
+          height: '18px',
+          padding: '0 5px',
+          borderRadius: '9px',
+          border: '2px solid #ffffff',
+          background: color,
+          color: '#ffffff',
+          fontSize: '10px',
+          fontWeight: '800',
+          lineHeight: '16px',
+          textAlign: 'center',
+          boxShadow: '0 2px 7px rgba(15,23,42,0.28)'
+        }
+      })
+      label.on('mouseover', () => highlightAnalysisSection(sec))
+      label.on('mouseout', resetAnalysisSectionHighlight)
+      label.on('click', () => {
+        analysisTab.value = 'section'
+        focusAnalysisSection(sec)
+      })
+      label.setMap(map)
+      analysisSectionLabels.push(label)
+    }
   }
 
   showAnalysis.value = true
@@ -1666,7 +1776,6 @@ async function drawRoute(route) {
   currentRouteId.value = route.routeId
   clearRoutes()
   muteClusterMarkers()
-  await drawRouteStations(route, '#2563eb')
   if (selectedStation.value?.lng && selectedStation.value?.lat) {
     map.setCenter([selectedStation.value.lng, selectedStation.value.lat])
   }
@@ -1894,6 +2003,9 @@ const vDraggable = {
 .analysis-item.clickable:hover {
   background: #f8fafc;
 }
+.analysis-item.active {
+  background: #eef2ff;
+}
 .anomaly-bar { width: 4px; height: 24px; border-radius: 2px; flex-shrink: 0; }
 .analysis-index {
   width: 18px;
@@ -1903,6 +2015,15 @@ const vDraggable = {
   color: #9ca3af;
 }
 .analysis-name { flex: 1; color: #111827; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.analysis-source {
+  flex-shrink: 0;
+  padding: 1px 5px;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 16px;
+  font-weight: 600;
+}
+.analysis-source.section { background: #f3f4f6; color: #4b5563; }
 .analysis-val { color: #6b7280; flex-shrink: 0; }
 .hourly-title { font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 6px; }
 .hourly-chart { height: 120px; }
