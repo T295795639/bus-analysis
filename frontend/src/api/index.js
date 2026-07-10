@@ -39,5 +39,5 @@ export const routeApi = {
   list: () => api.get('/route/list'),
   detail: (routeId) => api.get(`/route/${routeId}/detail`),
   byCluster: (clusterId) => api.get(`/route/by-cluster/${clusterId}`),
-  analysis: (routeId) => api.get(`/route/${routeId}/analysis`),
+  analysis: (routeId, direction = 'up') => api.get(`/route/${routeId}/analysis`, { params: { direction } }),
 }

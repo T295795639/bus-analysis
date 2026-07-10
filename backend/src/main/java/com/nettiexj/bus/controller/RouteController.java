@@ -35,8 +35,9 @@ public class RouteController {
     }
 
     /** 线路瓶颈分析：沿线站点停靠时长 + 路段行驶时长 + 异常评分 */
-    @GetMapping("/{routeId}/analysis")
-    public Result<com.nettiexj.bus.dto.RouteAnalysisVO> analysis(@PathVariable Integer routeId) {
-        return Result.success(routeService.getRouteAnalysis(routeId));
+    @GetMapping("/{routeKey}/analysis")
+    public Result<com.nettiexj.bus.dto.RouteAnalysisVO> analysis(@PathVariable String routeKey,
+                                                                  @RequestParam(defaultValue = "up") String direction) {
+        return Result.success(routeService.getRouteAnalysis(routeKey, direction));
     }
 }

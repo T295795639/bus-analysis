@@ -10,6 +10,8 @@ import com.nettiexj.bus.mapper.StationMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -26,6 +28,7 @@ public class RouteService {
     @Autowired private SectionMapper sectionMapper;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private static final DateTimeFormatter RANGE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
     public List<Route> listAll() {
         return routeMapper.selectList(null);
@@ -39,10 +42,12 @@ public class RouteService {
         return routeMapper.selectRoutesByClusterId(clusterId);
     }
 
-    public RouteAnalysisVO getRouteAnalysis(Integer routeId) {
+    public RouteAnalysisVO getRouteAnalysis(String routeId, String direction) {
+        String routeDirection = normalizeDirection(direction);
+        String routeNumber = routeId + "_" + routeDirection;
         // 1. 站点
-        List<StationAnalysisVO> stations = stationMapper.selectStationAnalysisByRouteId(routeId);
-        stations = mergeMissingRouteStations(stations, stationMapper.selectRouteStationAnalysisByRouteId(routeId));
+        List<StationAnalysisVO> stations = stationMapper.selectStationAnalysisByRouteId(routeId, routeDirection);
+        stations = mergeMissingRouteStations(stations, stationMapper.selectRouteStationAnalysisByRouteId(routeId, routeDirection));
         normalizeStationDurations(stations);
         double stationAvg = stations.stream()
                 .mapToDouble(s -> s.getAvgDuration() == null ? 0 : s.getAvgDuration())
@@ -53,7 +58,7 @@ public class RouteService {
         });
 
         // 2. 路段（path 为 JSON 字符串，转换后填入 SectionAnalysisVO）
-        List<SectionAnalysisRawVO> rawSections = sectionMapper.selectSectionAnalysisByRouteId(routeId);
+        List<SectionAnalysisRawVO> rawSections = sectionMapper.selectSectionAnalysisByRouteId(routeId, routeDirection);
         List<SectionAnalysisVO> sections = rawSections.stream().map(raw -> {
             SectionAnalysisVO s = new SectionAnalysisVO();
             s.setRouteNumber(raw.getRouteNumber());
@@ -90,7 +95,42 @@ public class RouteService {
         vo.setSections(sections);
         vo.setStationAvg(stationAvg);
         vo.setSectionAvg(sectionAvg);
+        setAnalysisTimeRange(vo, routeNumber);
         return vo;
+    }
+
+    private String normalizeDirection(String direction) {
+        if ("down".equalsIgnoreCase(direction) || "下行".equals(direction)) {
+            return "down";
+        }
+        return "up";
+    }
+
+    private void setAnalysisTimeRange(RouteAnalysisVO vo, String routeNumber) {
+        LocalDateTime parkingMin = stationMapper.selectRouteParkingMinTime(routeNumber);
+        LocalDateTime parkingMax = stationMapper.selectRouteParkingMaxTime(routeNumber);
+        LocalDateTime drivingMin = sectionMapper.selectRouteDrivingMinTime(routeNumber);
+        LocalDateTime drivingMax = sectionMapper.selectRouteDrivingMaxTime(routeNumber);
+
+        LocalDateTime start = minTime(parkingMin, drivingMin);
+        LocalDateTime end = maxTime(parkingMax, drivingMax);
+        vo.setDataStartTime(start);
+        vo.setDataEndTime(end);
+        if (start != null && end != null) {
+            vo.setDataRangeLabel(start.format(RANGE_FORMATTER) + " 至 " + end.format(RANGE_FORMATTER) + " 的平均数据");
+        }
+    }
+
+    private LocalDateTime minTime(LocalDateTime a, LocalDateTime b) {
+        if (a == null) return b;
+        if (b == null) return a;
+        return a.isBefore(b) ? a : b;
+    }
+
+    private LocalDateTime maxTime(LocalDateTime a, LocalDateTime b) {
+        if (a == null) return b;
+        if (b == null) return a;
+        return a.isAfter(b) ? a : b;
     }
 
     private void normalizeStationDurations(List<StationAnalysisVO> stations) {

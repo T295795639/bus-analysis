@@ -8,6 +8,7 @@ import com.nettiexj.bus.dto.StationVO;
 import com.nettiexj.bus.entity.Station;
 import org.apache.ibatis.annotations.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 public interface StationMapper extends BaseMapper<Station> {
@@ -50,7 +51,13 @@ public interface StationMapper extends BaseMapper<Station> {
 
     List<com.nettiexj.bus.dto.ClusterParkingVO> selectClusterParkingStats();
 
-    List<com.nettiexj.bus.dto.StationAnalysisVO> selectStationAnalysisByRouteId(@Param("routeId") Integer routeId);
+    List<com.nettiexj.bus.dto.StationAnalysisVO> selectStationAnalysisByRouteId(@Param("routeId") String routeId,
+                                                                                 @Param("direction") String direction);
 
-    List<com.nettiexj.bus.dto.StationAnalysisVO> selectRouteStationAnalysisByRouteId(@Param("routeId") Integer routeId);
+    List<com.nettiexj.bus.dto.StationAnalysisVO> selectRouteStationAnalysisByRouteId(@Param("routeId") String routeId,
+                                                                                     @Param("direction") String direction);
+
+    LocalDateTime selectRouteParkingMinTime(@Param("routeNumber") String routeNumber);
+
+    LocalDateTime selectRouteParkingMaxTime(@Param("routeNumber") String routeNumber);
 }

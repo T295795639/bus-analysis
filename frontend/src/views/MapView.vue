@@ -217,11 +217,18 @@
           <div class="panel-section-title" style="justify-content:space-between">
             <div style="display:flex;align-items:center;gap:6px">
               <span class="sec-dot" style="background:#f59e0b"></span>瓶颈分析
+              <div class="direction-tabs">
+                <button :class="['dir-tab', { active: currentRouteDirection==='up' }]" @click="switchRouteDirection('up')">上行</button>
+                <button :class="['dir-tab', { active: currentRouteDirection==='down' }]" @click="switchRouteDirection('down')">下行</button>
+              </div>
             </div>
             <div class="analysis-tabs">
               <button :class="['atab', { active: analysisTab==='station' }]"  @click="analysisTab='station'">慢站点</button>
               <button :class="['atab', { active: analysisTab==='section' }]" @click="analysisTab='section'">拥堵路段</button>
             </div>
+          </div>
+          <div class="analysis-legend">
+            <span v-if="analysisData.dataRangeLabel" class="analysis-range">{{ analysisData.dataRangeLabel }}</span>
           </div>
           <div class="analysis-legend">
             <span class="legend-dot" style="background:#22c55e"></span>正常
@@ -307,6 +314,7 @@ const displayMode = ref('cluster')
 const selectedStation = ref(null)
 const routes = ref([])
 const currentRouteId = ref(null)
+const currentRouteDirection = ref('up')
 
 // ── 站点停留分析卡片（排行 + 时长 + 散点 三合一） ──
 const showDwell = ref(false)
@@ -1301,7 +1309,7 @@ function clearRoutes() {
 }
 
 function fitCurrentRouteView() {
-  const overlays = [...routePolylines, ...highlightedMarkers]
+  const overlays = [...routePolylines, ...highlightedMarkers, ...analysisSections, ...analysisMarkers]
   if (!map || overlays.length === 0) return
   map.setFitView(overlays, false, [72, 360, 72, 32])
 }
@@ -1657,9 +1665,10 @@ function clearAnalysis() {
   showAnalysis.value = false
 }
 
-async function runAnalysis(routeId) {
+async function runAnalysis(routeId, direction = currentRouteDirection.value) {
   clearAnalysis()
-  const res = await routeApi.analysis(routeId)
+  currentRouteDirection.value = direction
+  const res = await routeApi.analysis(routeId, direction)
   analysisData.value = res.data
 
   // 站点颜色 Marker
@@ -1771,15 +1780,22 @@ async function runAnalysis(routeId) {
   showAnalysis.value = true
 }
 
+async function switchRouteDirection(direction) {
+  if (!currentRouteId.value || currentRouteDirection.value === direction) return
+  await runAnalysis(currentRouteId.value, direction)
+  fitCurrentRouteView()
+}
+
 // 点击面板里某条线路时：只显示该条，并显示沿线站点
 async function drawRoute(route) {
   currentRouteId.value = route.routeId
+  currentRouteDirection.value = 'up'
   clearRoutes()
   muteClusterMarkers()
   if (selectedStation.value?.lng && selectedStation.value?.lat) {
     map.setCenter([selectedStation.value.lng, selectedStation.value.lat])
   }
-  await runAnalysis(route.routeId)
+  await runAnalysis(route.routeId, currentRouteDirection.value)
   fitCurrentRouteView()
 }
 
@@ -1787,6 +1803,7 @@ function closePanel() {
   selectedStation.value = null
   routes.value = []
   currentRouteId.value = null
+  currentRouteDirection.value = 'up'
   clearRoutes()
   clearAnalysis()
   if (targetMarker) { targetMarker.setMap(null); targetMarker = null }
@@ -1987,10 +2004,14 @@ const vDraggable = {
 .low-freq-long   { background: #ede9fe; color: #5b21b6; }
 .anomaly         { background: #fee2e2; color: #991b1b; }
 .analysis-panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-.analysis-tabs { display: flex; gap: 4px; }
-.atab { padding: 2px 10px; font-size: 11px; border-radius: 4px; border: 1px solid #d1d5db; background: #f9fafb; cursor: pointer; color: #374151; }
+.direction-tabs { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid #dbeafe; border-radius: 6px; background: #eff6ff; }
+.dir-tab { padding: 1px 8px; font-size: 11px; border: 0; border-radius: 4px; background: transparent; color: #2563eb; cursor: pointer; white-space: nowrap; }
+.dir-tab.active { background: #2563eb; color: #ffffff; font-weight: 600; }
+.analysis-tabs { display: flex; gap: 4px; flex-shrink: 0; }
+.atab { padding: 2px 10px; font-size: 11px; border-radius: 4px; border: 1px solid #d1d5db; background: #f9fafb; cursor: pointer; color: #374151; white-space: nowrap; }
 .atab.active { background: #2563eb; color: #fff; border-color: #2563eb; }
 .analysis-legend { font-size: 11px; color: #6b7280; margin-bottom: 6px; display: flex; align-items: center; }
+.analysis-range { display: inline-flex; align-items: center; line-height: 1.45; color: #475569; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 6px; padding: 4px 6px; }
 .legend-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
 .analysis-list { list-style: none; padding: 0; margin: 0; }
 .analysis-item { display: flex; align-items: center; gap: 6px; padding: 4px 0; border-bottom: 1px solid #f3f4f6; font-size: 12px; }
@@ -2066,7 +2087,7 @@ const vDraggable = {
 /* ── 右侧面板 ── */
 .panel {
   position: absolute; top: 16px; right: 16px;
-  width: 300px; max-height: calc(100vh - 32px);
+  width: 340px; max-height: calc(100vh - 32px);
   background: #fff; border-radius: 12px;
   box-shadow: 0 4px 20px rgba(0,0,0,0.13);
   display: flex; flex-direction: column; z-index: 100; overflow: hidden;
@@ -2104,6 +2125,7 @@ const vDraggable = {
 .panel-section-title {
   display: flex; align-items: center; gap: 6px;
   font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 8px;
+  white-space: nowrap;
 }
 .sec-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 /* 线路列表 */
